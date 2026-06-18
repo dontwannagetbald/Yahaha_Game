@@ -15,22 +15,22 @@
 
 ## Phase 0：项目基线
 
-### Step 0.1：确认仓库现状
+### Step 0.1：确认仓库现状 ☑️ 已完成
 
 指令：
 
 - 检查项目根目录现有文件。
-- 确认 `docs/prd.md`、`docs/tech-stack.md`、`docs/design.md`、`docs/design-document.md` 均存在。
+- 确认 `docs/tech-stack.md`、`docs/design.md`、`docs/design-document.md` 均存在。
 - 确认当前分支和工作区状态。
 - 记录已有文件，不删除用户已有内容。
 
 验证：
 
-- 能列出上述 4 个文档。
+- 能列出上述 3 个文档。
 - 能看到当前 git 状态。
 - 工作区中没有因为本步骤产生的无关变更。
 
-### Step 0.2：创建项目目录结构
+### Step 0.2：创建项目目录结构 ☑️ 已完成
 
 指令：
 

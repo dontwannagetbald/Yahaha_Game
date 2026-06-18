@@ -1,21 +1,52 @@
-# AI Native 互动游戏平台架构记录
+# 项目 Layer 与文件职责
 
-本文档记录实施计划推进过程中形成的架构洞察。每完成一个 step 后，补充相关文件边界、模块职责和后续实现约束。
+本文档只维护当前项目 layer、目录边界和文件职责。完成度、已实现功能和待补齐边界记录在 [progress.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/progress.md)。
 
-## Step 0.1：仓库现状确认
-
-当前仓库以 `docs/` 作为产品设计、技术选型、实施计划和架构记录的事实来源。根目录的 `prd.md` 保留原始需求输入；`docs/design-document.md` 是 MVP 产品范围、业务状态、数据模型、接口边界、运行时协议和安全边界的整理版；`docs/tech-stack.md` 记录已确认技术栈；`docs/design.md` 记录 Yahaha 风格设计系统；`docs/implementation-plan.md` 定义分阶段执行计划；`docs/architecture.md` 用于持续补充实现后的架构洞察；`docs/progress.md` 预留为交付进度记录。
-
-仓库当前分支为 `main`，首次提交前所有项目文件均处于未跟踪状态。提交时需要避免纳入本地依赖、构建产物、虚拟环境、系统缓存和测试缓存，确保源码仓库只保留可复现项目结构与必要配置。
-
-## Step 0.2：项目目录结构
-
-根目录按前端、后端、部署、脚本和文档划分边界：
-
-- `frontend/`：React + Vite + Ant Design 前端应用目录，承载 SPA 入口、路由、全局样式、前端 Dockerfile、TypeScript 和 Vite 配置。后续 Home、Create、Play 和 Auth Modal 都在该目录内实现。
-- `backend/`：FastAPI 后端应用目录，承载 API 入口、配置读取、数据库连接、后端 Dockerfile、依赖声明和测试。后续认证、游戏列表、生成任务、上传、发布和 Play 事件接口都在该目录内实现。
-- `deployment/`：部署相关文件目录，当前使用 `.gitkeep` 保留目录边界。后续可放置 MinIO 初始化、环境部署说明、反向代理或其他部署编排文件。
-- `scripts/`：项目脚本目录，当前使用 `.gitkeep` 保留目录边界。后续可放置 seed、迁移辅助、示例游戏上传、验收检查和运维脚本。
-- `docs/`：设计与交付文档目录，保留产品设计、技术栈、实施计划、架构记录和进度记录，不承载运行时代码。
-
-当前目录结构已经为前端、后端、部署、脚本和文档建立清晰边界，但业务能力仍需按后续 step 逐步实现和验证。
+```text
+.
+├── AGENTS.md                         协作规则：中文响应（Step 0.1）、文档分工（Step 0.1）
+├── README.md                         启动说明：Compose 命令（Step 1.3）、检查命令（Step 1.3）
+├── prd.md                            原始需求：需求留存（Step 0.1）、验收约束（Step 0.1）
+├── .env.example                      环境样例：数据库变量（Step 0.3）、前后端地址（Step 0.3）
+├── .gitignore                        忽略规则：依赖排除（Step 0.1）、缓存排除（Step 0.1）
+├── docker-compose.yml                本地编排：PostgreSQL 服务（Step 1.1）、前后端服务（Step 1.1）
+├── backend/                          后端层：API 边界（Step 0.2）、测试边界（Step 0.2）
+│   ├── Dockerfile                    后端镜像：依赖安装（Step 1.1）、服务启动（Step 1.1）
+│   ├── .dockerignore                 构建忽略：缓存排除（Step 1.1）、镜像瘦身（Step 1.1）
+│   ├── requirements.txt              依赖清单：FastAPI 依赖（Step 2.1）、数据库依赖（Step 2.2）
+│   ├── pytest.ini                    测试配置：导入路径（Step 2.1）
+│   ├── app/                          应用包：代码边界（Step 0.2）
+│   │   ├── __init__.py               包标记：模块导入（Step 0.2）
+│   │   ├── config.py                 配置读取：环境加载（Step 2.2）、数据库地址（Step 2.2）
+│   │   ├── db.py                     数据库层：异步引擎（Step 2.2）、会话依赖（Step 2.2）
+│   │   └── main.py                   API 入口：健康检查（Step 2.1）、就绪检查（Step 2.2）
+│   └── tests/                        测试层：后端测试（Step 0.2）
+│       └── test_health.py            健康测试：接口断言（Step 2.1）
+├── frontend/                         前端层：SPA 边界（Step 0.2）、构建边界（Step 0.2）
+│   ├── Dockerfile                    前端镜像：依赖安装（Step 1.1）、Vite 启动（Step 1.1）
+│   ├── .dockerignore                 构建忽略：依赖排除（Step 1.1）、产物排除（Step 1.1）
+│   ├── package.json                  包配置：脚本定义（Step 8.1）、依赖声明（Step 8.1）
+│   ├── package-lock.json             依赖锁定：版本固定（Step 8.1）
+│   ├── index.html                    HTML 入口：Root 挂载（Step 8.1）
+│   ├── tsconfig.json                 TS 配置：前端编译（Step 8.1）
+│   ├── tsconfig.node.json            Node TS 配置：Vite 编译（Step 8.1）
+│   ├── vite.config.ts                Vite 配置：React 插件（Step 8.1）、开发服务（Step 8.1）
+│   ├── vite.config.js                Vite 配置副本：待收敛
+│   ├── vite.config.d.ts              类型声明：待评估
+│   └── src/                          前端源码：页面入口（Step 0.2）
+│       ├── main.tsx                  渲染入口：Root 创建（Step 8.1）、样式加载（Step 8.1）
+│       ├── App.tsx                   应用壳：占位页面（Step 8.1）、API 地址展示（Step 8.1）
+│       ├── styles.css                全局样式：基础字体（Step 8.1）、页面壳样式（Step 8.1）
+│       └── vite-env.d.ts             类型声明：Vite 类型（Step 8.1）
+├── deployment/                       部署层：目录边界（Step 0.2）
+│   └── .gitkeep                      占位文件：目录保留（Step 0.2）
+├── scripts/                          脚本层：目录边界（Step 0.2）
+│   └── .gitkeep                      占位文件：目录保留（Step 0.2）
+└── docs/                             文档层：设计文档（Step 0.2）、交付记录（Step 0.2）
+    ├── architecture.md               架构文档：Layer 维护（Step 0.1）、文件职责（Step 0.2）
+    ├── design-document.md            产品设计：用户旅程（Step 0.1）、数据模型（Step 0.1）
+    ├── design.md                     设计系统：视觉规则（Step 0.1）、组件规则（Step 0.1）
+    ├── implementation-plan.md        实施计划：Step 指令（Step 0.1）、验证条件（Step 0.1）
+    ├── tech-stack.md                 技术栈：选型记录（Step 0.1）、架构方向（Step 0.1）
+    └── progress.md                   进度文档：功能索引（Step 0.1）、待补边界（Step 0.1）
+```
