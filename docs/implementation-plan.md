@@ -81,7 +81,7 @@
 - 启动后 MinIO 控制台可访问。
 - backend 和 frontend 服务能启动或进入等待依赖状态。
 
-### Step 1.2：初始化 MinIO bucket
+### Step 1.2：初始化 MinIO bucket ☑️ 已完成
 
 指令：
 

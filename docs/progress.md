@@ -8,6 +8,7 @@
 - 目录结构：建立 `frontend/`、`backend/`、`deployment/`、`scripts/`、`docs/` 的清晰边界，并通过 `.gitkeep` 保留暂未放置业务文件的目录（Step 0.2）。
 - 环境变量样例：提供前端、后端、PostgreSQL、MinIO、Session、OpenAI-compatible API 和 Mock provider 变量样例，并使用占位值避免真实密钥（Step 0.3）。
 - Docker Compose 基线：定义 PostgreSQL、MinIO、backend、frontend 服务，包含持久化 volume、健康检查、端口映射和服务依赖（Step 1.1）。
+- MinIO 初始化：使用单 bucket 保存 `published/*`、`uploads/*`、`drafts/*`，并通过 prefix policy 仅公开 `published/*` 读取权限（Step 1.2）。
 - 后端基础骨架：FastAPI 应用可创建，已配置本地前端 CORS，提供 `/health` 健康检查接口（Step 2.1 部分完成）。
 - 数据库连接基础：后端可读取 `DATABASE_URL`，创建 async SQLAlchemy engine，并通过 `/ready` 执行 `SELECT 1` 检查数据库连接（Step 2.2 部分完成）。
 - 前端基础骨架：React + Vite + Ant Design 依赖和入口已建立，页面可读取 `VITE_API_BASE_URL` 并渲染占位内容（Step 8.1 部分完成）。
@@ -42,6 +43,14 @@
 - 已暴露 MinIO S3 API 端口 `9000` 和控制台端口 `9001`。
 - 已配置 backend 同时依赖 PostgreSQL 和 MinIO 健康状态，frontend 依赖 backend。
 - 已更新 `docs/architecture.md` 和 `docs/implementation-plan.md`，记录 Step 1.1 完成状态。
+
+### Step 1.2：初始化 MinIO bucket ☑️ 已完成
+
+- 已新增 `deployment/minio-init.sh`，用于等待 MinIO、创建单个 bucket，并写入 prefix policy。
+- 已新增 `minio-init` Compose 服务，依赖 MinIO 健康状态后执行初始化。
+- 已配置 `published/*` public-read，未给 `uploads/*` 和 `drafts/*` 配置公开读取权限。
+- 已配置 backend 等待 `minio-init` 成功完成后启动，确保对象存储初始化先于业务服务。
+- 已更新 `docs/architecture.md` 和 `docs/implementation-plan.md`，记录 Step 1.2 完成状态。
 
 ## 尚未落地或需补齐的边界
 

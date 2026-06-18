@@ -33,6 +33,21 @@ services:
       timeout: 5s
       retries: 10
 
+  minio-init:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    entrypoint: ["sh", "/minio-init.sh"]
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-change-me-local}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change-me-local}
+      MINIO_BUCKET: ${MINIO_BUCKET:-yahaha-game}
+    volumes:
+      - ./deployment/minio-init.sh:/minio-init.sh:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -54,6 +69,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
   frontend:
     build:

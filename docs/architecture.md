@@ -39,7 +39,8 @@
 │       ├── styles.css                全局样式：基础字体（Step 8.1）、页面壳样式（Step 8.1）
 │       └── vite-env.d.ts             类型声明：Vite 类型（Step 8.1）
 ├── deployment/                       部署层：目录边界（Step 0.2）
-│   └── .gitkeep                      占位文件：目录保留（Step 0.2）
+│   ├── .gitkeep                      占位文件：目录保留（Step 0.2）
+│   └── minio-init.sh                 存储初始化：Bucket 创建（Step 1.2）、Prefix 策略（Step 1.2）
 ├── scripts/                          脚本层：目录边界（Step 0.2）
 │   └── .gitkeep                      占位文件：目录保留（Step 0.2）
 └── docs/                             文档层：设计文档（Step 0.2）、交付记录（Step 0.2）
