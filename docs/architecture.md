@@ -7,7 +7,7 @@
 ├── AGENTS.md                         协作规则：中文响应（Step 0.1）、文档分工（Step 0.1）
 ├── README.md                         启动说明：Compose 命令（Step 1.3）、检查命令（Step 1.3）
 ├── prd.md                            原始需求：需求留存（Step 0.1）、验收约束（Step 0.1）
-├── .env.example                      环境样例：数据库变量（Step 0.3）、前后端地址（Step 0.3）
+├── .env.example                      环境样例：前后端地址（Step 0.3）、存储模型变量（Step 0.3）
 ├── .gitignore                        忽略规则：依赖排除（Step 0.1）、缓存排除（Step 0.1）
 ├── docker-compose.yml                本地编排：PostgreSQL 服务（Step 1.1）、前后端服务（Step 1.1）
 ├── backend/                          后端层：API 边界（Step 0.2）、测试边界（Step 0.2）
