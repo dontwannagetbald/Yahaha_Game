@@ -9,7 +9,7 @@
 ├── prd.md                            原始需求：需求留存（Step 0.1）、验收约束（Step 0.1）
 ├── .env.example                      环境样例：前后端地址（Step 0.3）、存储模型变量（Step 0.3）
 ├── .gitignore                        忽略规则：依赖排除（Step 0.1）、缓存排除（Step 0.1）
-├── docker-compose.yml                本地编排：PostgreSQL 服务（Step 1.1）、前后端服务（Step 1.1）
+├── docker-compose.yml                本地编排：基础服务（Step 1.1）、持久卷（Step 1.1）
 ├── backend/                          后端层：API 边界（Step 0.2）、测试边界（Step 0.2）
 │   ├── Dockerfile                    后端镜像：依赖安装（Step 1.1）、服务启动（Step 1.1）
 │   ├── .dockerignore                 构建忽略：缓存排除（Step 1.1）、镜像瘦身（Step 1.1）

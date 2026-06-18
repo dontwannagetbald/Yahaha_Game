@@ -63,7 +63,7 @@
 
 ## Phase 1：Docker Compose 基础设施
 
-### Step 1.1：定义 Docker Compose 服务
+### Step 1.1：定义 Docker Compose 服务 ☑️ 已完成
 
 指令：
 

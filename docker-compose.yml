@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-yahaha_game}
       POSTGRES_USER: ${POSTGRES_USER:-yahaha}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yahaha}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-local}
     ports:
       - "5432:5432"
     volumes:
@@ -15,17 +15,44 @@ services:
       timeout: 5s
       retries: 10
 
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-change-me-local}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-change-me-local}
+      MINIO_REGION_NAME: ${MINIO_REGION:-us-east-1}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: ./backend
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://yahaha:yahaha@db:5432/yahaha_game}
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://yahaha:change-me-local@db:5432/yahaha_game}
       BACKEND_HOST: ${BACKEND_HOST:-0.0.0.0}
       BACKEND_PORT: ${BACKEND_PORT:-8000}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-change-me-local}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-change-me-local}
+      MINIO_BUCKET: ${MINIO_BUCKET:-yahaha-game}
+      MINIO_REGION: ${MINIO_REGION:-us-east-1}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
     ports:
       - "8000:8000"
     depends_on:
       db:
+        condition: service_healthy
+      minio:
         condition: service_healthy
 
   frontend:
@@ -40,3 +67,4 @@ services:
 
 volumes:
   postgres-data:
+  minio-data:
