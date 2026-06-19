@@ -88,6 +88,7 @@ services:
         condition: service_completed_successfully
 
   frontend:
+    profiles: ["docker-frontend"]
     build:
       context: ./frontend
     environment:

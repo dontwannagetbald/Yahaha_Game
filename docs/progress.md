@@ -7,10 +7,17 @@
 - 仓库基线：保留原始需求、设计文档、技术栈、实施计划和架构记录；通过 `.gitignore` 排除本地依赖、构建产物、虚拟环境和缓存（Step 0.1）。
 - 目录结构：建立 `frontend/`、`backend/`、`deployment/`、`scripts/`、`docs/` 的清晰边界，并通过 `.gitkeep` 保留暂未放置业务文件的目录（Step 0.2）。
 - 环境变量样例：提供前端、后端、PostgreSQL、MinIO、Session、OpenAI-compatible API 和 Mock provider 变量样例，并使用占位值避免真实密钥（Step 0.3）。
-- Docker Compose 基线：定义 PostgreSQL、MinIO、backend、frontend 服务，包含持久化 volume、健康检查、端口映射和服务依赖（Step 1.1）。
+- Docker Compose 基线：定义 PostgreSQL、MinIO、backend、frontend 服务，包含持久化 volume、健康检查、端口映射和服务依赖；frontend 已改为可选 profile，默认本地 Vite 开发（Step 1.1、Frontend Step 3.4）。
 - MinIO 初始化：使用单 bucket 保存 `published/*`、`uploads/*`、`drafts/*`，并通过 prefix policy 仅公开 `published/*` 读取权限（Step 1.2）。
 - 本地启动说明：README 提供复制 `.env.example`、一条 Compose 启动命令、端口说明和健康检查命令（Step 1.3）。
 - 业务表迁移：已创建 `games`、`game_likes`、`generation_jobs`、`uploaded_assets`、`agent_logs`、`play_events`，并验证 Alembic 升级到 `0002_business_tables`（Step 1）。
+- 对象存储服务：已封装单 bucket、三类 prefix、presigned read/upload URL、published public URL 和存储异常边界，并完成真实 MinIO 私有/公开访问验证（Step 2）。
+- 后端接口文档：已显式开放 Swagger UI、ReDoc 和 OpenAPI JSON，便于查看认证、存储和后续业务接口（Step 2.5）。
+- 上传接口：已实现 `POST /api/uploads/presign` 和 `POST /api/uploads/complete`，支持登录保护、20MB 限制、对象 key 签名和素材登记（Step 3）。
+- 游戏接口：已实现 `GET /api/games` 和 `GET /api/games/{game_id}`，支持 published 列表、排序、搜索、标签筛选和 draft 预览权限（Step 4）。
+- 点赞接口：已实现 `POST /api/games/{game_id}/like`，支持登录保护、首次点赞写入和重复点赞幂等（Step 5）。
+- Play 事件接口：已实现 `POST /api/play-events`，支持游客/登录用户上报、`view` 计数规则和 metadata 脱敏（Step 6）。
+- 任务接口：已实现 `POST /api/jobs`、`GET /api/jobs`、`GET /api/jobs/{job_id}`、`GET /api/jobs/{job_id}/logs`，支持素材归属校验、最多 5 个素材、任务排序和日志脱敏（Step 7）。
 - 后端基础骨架：FastAPI 应用可创建，已配置本地前端 CORS，提供 `/health` 健康检查接口，并使用统一 HTTP 错误响应格式（Step 2.1）。
 - 数据库连接基础：后端可读取 `DATABASE_URL`，创建 async SQLAlchemy engine，通过 `/ready` 执行 `SELECT 1` 检查数据库连接，并提供 Alembic 迁移（Step 2.2）。
 - Phase 4 前数据表：当前只创建 `users`、`sessions`、`oauth_accounts`，对象存储和游戏相关表后续再建（Step 2.3 调整范围）。
@@ -24,6 +31,7 @@
 - 前端当前用户恢复：应用启动时请求 `/api/auth/me`，无 session 保持游客 Home，已登录时恢复昵称和头像（Frontend Step 2.2）。
 - 前端 Auth 交互：已接通邮箱注册、邮箱登录、退出登录、Google OAuth start、GitHub disabled 占位、页面级成功提示和错误提示（Frontend Step 2.3-2.8）。
 - 前端基础设施：已新增 mock 开关、统一错误摘要和结构化 Console 输出，支持后端未完成时继续开发 Home/Create/Play（Frontend Step 3.1-3.3）。
+- 前端路由拆分：已引入真实前端路由，拆分 `pages/` 与 `components/` 结构，`Play` 页面不显示导航，点击 `创建游戏` 登录成功后直达 `Create`（Frontend Step 3.4）。
 
 ## Step 完成记录
 
@@ -78,6 +86,17 @@
 - 已新增 `backend/tests/test_migrations.py`，覆盖业务表字段、索引、唯一约束和 Alembic SQL 输出。
 - 已将 `games.tags` 调整为跨 SQLite/PostgreSQL 均可运行的 JSON 列，避免破坏现有后端测试。
 - 已验证 `pytest backend/tests/test_migrations.py -v`、`pytest backend/tests -q`、`docker compose exec -T backend alembic upgrade head` 和 `docker compose exec -T backend alembic current` 均通过，当前 revision 为 `0002_business_tables`。
+
+### Step 2：封装 MinIO 存储服务 ☑️ 已完成
+
+- 已在 `backend/app/config.py` 中补齐 MinIO endpoint、public endpoint、bucket、region、SSL 和访问凭证配置项。
+- 已新增 `backend/app/storage.py`，统一生成 `uploads/*`、`drafts/*`、`published/*` 对象路径，并集中处理 presigned upload URL、presigned read URL、public read URL。
+- 已对文件名和相对路径做安全化处理，移除路径穿越片段，避免业务层手写 bucket 名和对象路径。
+- 已新增 `backend/tests/test_storage.py`，覆盖对象 key 规则、public/presigned URL 规则和底层 S3 客户端异常包装。
+- 已新增 `boto3` 依赖，并验证 `pytest backend/tests/test_storage.py -v`、`pytest backend/tests -q` 均通过。
+- 已通过真实 Compose/MinIO 验证：`published/*` 无认证访问返回 200，`uploads/*` 无认证访问返回 403，`uploads/*` presigned URL 在容器内访问返回 200。
+- 已在 `backend/app/main.py` 中显式配置 `/docs`、`/redoc`、`/openapi.json`，并补齐 OpenAPI 标题、版本和说明。
+- 已在 `README.md` 中补充 Swagger UI、ReDoc 和 OpenAPI JSON 访问地址，方便本地查看后端接口。
 
 ### Step 2.1：创建 FastAPI 应用骨架 ☑️ 已完成
 
@@ -135,10 +154,59 @@
 - 已实现 `/api/auth/oauth/github/start` 和 `/api/auth/oauth/github/callback` 占位，返回后续版本提示。
 - 完整 Google 授权页账号选择/同意步骤需要用户在浏览器中完成。
 
+### Step 3：实现 Uploads API ☑️ 已完成
+
+- 已新增 `backend/app/uploads.py`，实现 `POST /api/uploads/presign` 和 `POST /api/uploads/complete`。
+- 已对 Uploads API 接入登录保护；未登录调用 presign 或 complete 时，返回统一 `401 unauthorized` 错误格式。
+- 已为 presign 请求增加 `filename`、`mime_type`、`size_bytes` 校验，并限制单文件最大 20MB；超限时返回 `413 file_too_large`。
+- 已复用存储服务生成当前用户 `uploads/*` prefix 下的 object key 和 presigned upload URL。
+- 已在 complete 路径校验 object key 必须属于当前用户 uploads prefix，并将素材登记到 `uploaded_assets`，`job_id` 保持为空。
+- 已新增 `backend/tests/test_uploads.py`，覆盖 presign 登录保护、presign 成功响应、20MB 限制、complete 登录保护和 complete 落库。
+- 已验证 `pytest backend/tests/test_uploads.py -v`、`pytest backend/tests -q` 通过。
+
+### Step 4：实现 Games 列表和 Meta API ☑️ 已完成
+
+- 已新增 `backend/app/games.py`，实现 `GET /api/games` 和 `GET /api/games/{game_id}`。
+- 已对列表接口接入 `latest`、`play_count`、`like_count` 排序，并支持 `q` 搜索标题、简介、作者展示名和 `tag` 标签筛选。
+- 已将列表结果限制为 `published` 游戏，并按当前登录态返回 `liked_by_me`。
+- 已实现游戏 meta 权限：`published` 公开可读，`draft` 仅 owner 可读，`deleted` 返回 `404`。
+- 已新增 `backend/tests/test_games.py`，覆盖 published 列表、排序、筛选和 draft meta 权限。
+- 已验证 `pytest backend/tests/test_games.py -q` 与 `pytest backend/tests -q` 通过。
+
+### Step 5：实现点赞 API ☑️ 已完成
+
+- 已在 `backend/app/games.py` 中新增 `POST /api/games/{game_id}/like`。
+- 已对点赞接口接入登录保护，未登录时返回统一 `401 unauthorized` 错误格式。
+- 已实现首次点赞写入 `game_likes` 并递增 `games.like_count`。
+- 已实现重复点赞幂等返回，不重复写入记录，不重复累加计数。
+- 已限制仅 `published` 游戏可被点赞，`draft` 和 `deleted` 游戏返回 `404`。
+- 已新增 `backend/tests/test_likes.py`，覆盖登录保护、首次点赞、重复点赞、多用户点赞和无效状态。
+- 已验证 `pytest backend/tests/test_likes.py -q` 与 `pytest backend/tests -q` 通过。
+
+### Step 6：实现 Play Events API ☑️ 已完成
+
+- 已新增 `backend/app/play_events.py`，实现 `POST /api/play-events`。
+- 已允许游客和登录用户上报事件；登录态存在时会记录 `user_id`，否则按游客写入。
+- 已限制 event type 为 `view`、`manifest_loaded`、`started`、`failed`、`timeout`、`exited`。
+- 已选择 `view` 作为 `play_count` 增量触发事件，其他事件只记录不计数。
+- 已在保存 metadata 前移除 `secret`、`token`、`password`、`code` 等敏感字段，并去除 presigned URL 签名参数。
+- 已新增 `backend/tests/test_play_events.py`，覆盖游客上报、登录用户事件、计数规则和 metadata 脱敏。
+- 已验证 `pytest backend/tests/test_play_events.py -q` 与 `pytest backend/tests -q` 通过。
+
+### Step 7：实现 Jobs API 基础 ☑️ 已完成
+
+- 已新增 `backend/app/jobs.py`，实现 `POST /api/jobs`、`GET /api/jobs`、`GET /api/jobs/{job_id}` 和 `GET /api/jobs/{job_id}/logs`。
+- 已对创建任务接入登录保护，保存 `prompt`、`confirmation` 并创建 `pending` 状态任务。
+- 已限制单任务最多绑定 5 个素材，并校验所有 `asset_id` 必须属于当前用户；创建成功后会把素材绑定到任务。
+- 已将任务列表限制为当前用户，并按 `created_at` 倒序返回；详情和日志仅 owner 可读。
+- 已对任务日志按时间正序返回，并在响应前脱敏敏感文本与 presigned URL 签名。
+- 已新增 `backend/tests/test_jobs.py`，覆盖登录保护、创建成功、素材归属、数量限制、列表详情权限和日志脱敏。
+- 已验证 `pytest backend/tests/test_jobs.py -q` 与 `pytest backend/tests -q` 通过。
+
 ## 尚未落地或需补齐的边界
 
-- 后端尚未实现 Phase 4 及之后的对象存储、游戏、任务、Play 相关 API。
-- 前端尚未实现正式路由、Home、Create 和 Play 页面；Create 页面以 [pages-design.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/pages-design.md) 中的左侧任务列表、聊天上传区、生成游戏显示面板为准。
+- 后端尚未实现 Agent runner、任务异步执行、生成产物落盘、发布接口、seed 数据和端到端生成闭环。
+- 前端已完成页面与路由骨架，但尚未全面接通 Home、Create、Play 与后端真实业务数据链路；Create 页面仍需继续对齐 [pages-design.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/pages-design.md) 的任务工作台交互。
 - `frontend/vite.config.ts`、`frontend/vite.config.js` 和 `frontend/vite.config.d.ts` 当前存在职责重叠，后续推进 Step 8.1 时应统一配置来源。
 - 后续实施计划需按前端、后端、Agent 三端拆分，并以接口契约保证并行开发一致性。
 
@@ -206,3 +274,26 @@
 - 已在 `frontend/src/App.tsx` 接入页面级错误弹窗和结构化 Console 输出；当前 Home、Create、Play、Auth 的关键动作都会输出到 DevTools Console，页面内没有新增调试面板（Frontend Step 3.2、3.3）。
 - 已新增 `frontend/scripts/check-app-infra.mjs` 和 `npm run test:app-infra`，覆盖 mock 开关、错误摘要和 Console 工具接入约束（Frontend Step 3.3）。
 - 已运行 `npm run test:app-infra`、`npm run test:auth-ui`、`npm run test:current-user`、`npm run test:auth-client` 和 `npm run build`，五者均通过（Frontend Step 3.3）。
+
+### 2026-06-19：收敛 Frontend Step 3.4 首页版式与导航比例
+
+- 已重排 `frontend/src/pages/HomePage.tsx`，将首页改为更规范的三段式结构：轻量 Hero、精选游戏 Spotlight、独立浏览面板和更整齐的卡片列表（Frontend Step 3.4）。
+- 已重写 `frontend/src/pages/home.css`，整体下调标题、按钮、筛选器和卡片字号，减少首屏拥挤感，并让搜索与筛选从背景图中独立出来（Frontend Step 3.4）。
+- 已调整 `frontend/src/styles.css` 顶部导航比例，收窄导航高度、站名字号、导航间距、头像尺寸和登录按钮尺寸，使其更接近 Yahaha 官网导航风格（Frontend Step 3.4）。
+- 已运行 `npm run build` 和 `npm run test:routing-structure`，确认视觉重排后前端构建与页面拆分结构仍然通过（Frontend Step 3.4）。
+- 已将 `docker-compose.yml` 中 frontend 服务切换为 `docker-frontend` 可选 profile，并在 `README.md` 中明确推荐「backend 走 Docker、frontend 本地 `npm run dev`」的开发方式，避免旧前端容器缓存页面（Frontend Step 3.4）。
+
+### 2026-06-19：完成 Frontend Step 3.4 路由与页面结构拆分
+
+- 已安装 `react-router-dom`，并在 `frontend/src/main.tsx` 中挂载 `BrowserRouter`；`frontend/src/App.tsx` 现只保留路由、导航显隐、Auth 全局状态和错误弹窗编排（Frontend Step 3.4）。
+- 已将 `Home / Create / Play` 拆分到 `frontend/src/pages/`，并各自拥有独立 CSS 文件；同时将 `AuthModal` 和 `TopNav` 抽到 `frontend/src/components/`（Frontend Step 3.4）。
+- 已将 `Play` 页面改为独立路由 `/play/:gameId`，并明确不显示顶部导航；`Home` 与 `Create` 继续复用导航壳层（Frontend Step 3.4）。
+- 已修正受保护入口行为：未登录点击 `创建游戏` 后，登录成功直接 `navigate("/create")`，不再回到主页（Frontend Step 3.4）。
+- 已新增 `frontend/src/types/ui.ts` 收敛页面与展示类型，并新增 `frontend/scripts/check-routing-structure.mjs` 校验页面拆分、真实路由和 `Play` 无导航约束（Frontend Step 3.4）。
+- 已运行 `npm run test:routing-structure`、`npm run test:auth-ui`、`npm run test:app-infra` 和 `npm run build`，四者均通过（Frontend Step 3.4）。
+
+### 2026-06-19：补齐 Auth 成功/失败弹窗反馈
+
+- 已将登录/注册成功从右上角提示改为统一成功弹窗，分别展示“登录成功”或“注册成功”，并提示即将跳转的页面（Frontend Step 3.4 调整）。
+- 已将登录/注册失败和前端校验失败统一接入错误弹窗，弹窗内展示失败标题、具体失败原因和下一步建议（Frontend Step 3.4 调整）。
+- 已运行 `npm run test:auth-ui`、`npm run test:routing-structure`、`npm run test:app-infra` 和 `npm run build`，四者均通过（Frontend Step 3.4 调整）。

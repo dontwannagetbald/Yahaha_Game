@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     database_url: str = ""
     frontend_origin: str = "http://localhost:5173"
+    frontend_origins: str = ""
 
     session_secret: str = "change-me-local-session-secret"
     session_cookie_name: str = "yahaha_session"
@@ -28,6 +29,14 @@ class Settings(BaseSettings):
     session_cookie_samesite: str = "lax"
     session_ttl_seconds: int = 604800
     oauth_state_cookie_name: str = "yahaha_oauth_state"
+
+    minio_endpoint: str = "http://minio:9000"
+    minio_public_endpoint: str = "http://localhost:9000"
+    minio_access_key: str = "change-me-local"
+    minio_secret_key: str = "change-me-local"
+    minio_bucket: str = "yahaha-game"
+    minio_region: str = "us-east-1"
+    minio_use_ssl: bool = False
 
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -43,6 +52,27 @@ class Settings(BaseSettings):
     openai_compatible_api_key: str = ""
     openai_compatible_model: str = "example-model"
     openai_compatible_timeout_seconds: int = 120
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        raw_origins = self.frontend_origins.strip()
+        if raw_origins:
+            origins = [
+                origin.strip().rstrip("/")
+                for origin in raw_origins.split(",")
+                if origin.strip()
+            ]
+        else:
+            origins = [
+                self.frontend_origin.rstrip("/"),
+                "http://127.0.0.1:5173",
+            ]
+
+        deduped: list[str] = []
+        for origin in origins:
+            if origin not in deduped:
+                deduped.append(origin)
+        return deduped
 
 
 def validate_required_settings(current_settings: Settings) -> None:

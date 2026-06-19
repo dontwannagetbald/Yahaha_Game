@@ -10,19 +10,34 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.auth import router as auth_router
 from app.config import settings
 from app.db import get_session
+from app.games import router as games_router
+from app.jobs import router as jobs_router
+from app.play_events import router as play_events_router
+from app.uploads import router as uploads_router
 
 
-app = FastAPI(title="Yahaha Game API")
+app = FastAPI(
+    title="Yahaha Game API",
+    version="0.1.0",
+    description="Backend API docs for auth, storage, jobs, games, and play flows.",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
+    allow_origins=settings.cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(auth_router)
+app.include_router(games_router)
+app.include_router(play_events_router)
+app.include_router(jobs_router)
+app.include_router(uploads_router)
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -32,8 +47,10 @@ async def http_exception_handler(
     message = exc.detail if isinstance(exc.detail, str) else "Request failed"
     code_by_status = {
         401: "unauthorized",
+        403: "forbidden",
         409: "conflict",
         404: "not_found",
+        413: "file_too_large",
         503: "service_unavailable",
     }
     code = code_by_status.get(exc.status_code, "http_error")

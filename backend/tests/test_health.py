@@ -13,6 +13,22 @@ def test_health_returns_ok():
     assert response.json() == {"status": "ok"}
 
 
+def test_swagger_and_openapi_are_available_with_explicit_metadata():
+    client = TestClient(app)
+
+    docs_response = client.get("/docs")
+    openapi_response = client.get("/openapi.json")
+
+    assert docs_response.status_code == 200
+    assert "Swagger UI" in docs_response.text
+    assert openapi_response.status_code == 200
+    assert openapi_response.json()["info"] == {
+        "title": "Yahaha Game API",
+        "version": "0.1.0",
+        "description": "Backend API docs for auth, storage, jobs, games, and play flows.",
+    }
+
+
 def test_health_allows_local_frontend_origin():
     client = TestClient(app)
 
@@ -26,6 +42,21 @@ def test_health_allows_local_frontend_origin():
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_health_allows_loopback_frontend_origin():
+    client = TestClient(app)
+
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
 
 
 def test_http_errors_use_uniform_error_response():

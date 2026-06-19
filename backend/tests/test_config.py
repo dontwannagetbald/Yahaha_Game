@@ -44,6 +44,19 @@ def test_openai_compatible_provider_requires_api_key():
         validate_required_settings(settings)
 
 
+def test_default_cors_origins_cover_localhost_and_loopback():
+    settings = Settings(
+        database_url="postgresql+asyncpg://user:pass@db:5432/app",
+        frontend_origin="http://localhost:5173",
+        frontend_origins="",
+    )
+
+    assert settings.cors_allowed_origins == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+
 def test_env_example_covers_validated_settings():
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
 

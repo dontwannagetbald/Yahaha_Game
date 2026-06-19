@@ -176,7 +176,7 @@
 
 ---
 
-## Step 2：封装 MinIO 存储服务
+## Step 2：封装 MinIO 存储服务 ☑️ 已完成
 
 **目标文件：**
 - 新增：`backend/app/storage.py`
@@ -247,7 +247,7 @@
 
 ---
 
-## Step 3：实现 Uploads API
+## Step 3：实现 Uploads API ☑️ 已完成
 
 **目标文件：**
 - 新增：`backend/app/uploads.py`
@@ -347,7 +347,7 @@
 
 ---
 
-## Step 4：实现 Games 列表和 Meta API
+## Step 4：实现 Games 列表和 Meta API ☑️ 已完成
 
 **目标文件：**
 - 新增：`backend/app/games.py`
@@ -452,7 +452,7 @@
 
 ---
 
-## Step 5：实现点赞 API
+## Step 5：实现点赞 API ☑️ 已完成
 
 **目标文件：**
 - 修改：`backend/app/games.py`
@@ -527,7 +527,7 @@
 
 ---
 
-## Step 6：实现 Play Events API
+## Step 6：实现 Play Events API ☑️ 已完成
 
 **目标文件：**
 - 新增：`backend/app/play_events.py`
@@ -624,7 +624,7 @@
 
 ---
 
-## Step 7：实现 Jobs API 基础
+## Step 7：实现 Jobs API 基础 ☑️ 已完成
 
 **目标文件：**
 - 新增：`backend/app/jobs.py`

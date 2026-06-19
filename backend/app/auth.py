@@ -82,13 +82,22 @@ async def create_session(
 async def get_current_user(
     request: Request, db: Annotated[AsyncSession, Depends(get_session)]
 ) -> User:
+    user = await get_optional_current_user(request, db)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+async def get_optional_current_user(
+    request: Request, db: AsyncSession
+) -> User | None:
     raw_session_id = request.cookies.get(settings.session_cookie_name)
     if not raw_session_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+        return None
     try:
         session_id = uuid.UUID(raw_session_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=401, detail="Invalid session") from exc
+    except ValueError:
+        return None
 
     result = await db.execute(
         select(Session, User)
@@ -97,13 +106,13 @@ async def get_current_user(
     )
     row = result.first()
     if row is None:
-        raise HTTPException(status_code=401, detail="Invalid session")
+        return None
 
     session, user = row
     if normalize_datetime(session.expires_at) <= datetime.now(timezone.utc):
         await db.delete(session)
         await db.commit()
-        raise HTTPException(status_code=401, detail="Session expired")
+        return None
 
     session.last_seen_at = datetime.now(timezone.utc)
     await db.commit()

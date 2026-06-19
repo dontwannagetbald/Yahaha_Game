@@ -33,3 +33,31 @@ class OAuthStartResponse(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class UploadPresignRequest(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+
+
+class UploadPresignResponse(BaseModel):
+    upload_id: str
+    object_key: str
+    upload_url: str
+    expires_in: int
+
+
+class UploadCompleteRequest(BaseModel):
+    upload_id: str
+    object_key: str = Field(min_length=1)
+    filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(gt=0)
+
+
+class UploadCompleteResponse(BaseModel):
+    asset_id: str
+    filename: str
+    mime_type: str
+    size_bytes: int
