@@ -10,6 +10,7 @@
 - Docker Compose 基线：定义 PostgreSQL、MinIO、backend、frontend 服务，包含持久化 volume、健康检查、端口映射和服务依赖（Step 1.1）。
 - MinIO 初始化：使用单 bucket 保存 `published/*`、`uploads/*`、`drafts/*`，并通过 prefix policy 仅公开 `published/*` 读取权限（Step 1.2）。
 - 本地启动说明：README 提供复制 `.env.example`、一条 Compose 启动命令、端口说明和健康检查命令（Step 1.3）。
+- 业务表迁移：已创建 `games`、`game_likes`、`generation_jobs`、`uploaded_assets`、`agent_logs`、`play_events`，并验证 Alembic 升级到 `0002_business_tables`（Step 1）。
 - 后端基础骨架：FastAPI 应用可创建，已配置本地前端 CORS，提供 `/health` 健康检查接口，并使用统一 HTTP 错误响应格式（Step 2.1）。
 - 数据库连接基础：后端可读取 `DATABASE_URL`，创建 async SQLAlchemy engine，通过 `/ready` 执行 `SELECT 1` 检查数据库连接，并提供 Alembic 迁移（Step 2.2）。
 - Phase 4 前数据表：当前只创建 `users`、`sessions`、`oauth_accounts`，对象存储和游戏相关表后续再建（Step 2.3 调整范围）。
@@ -19,6 +20,10 @@
 - 前端 Auth 基线：React + Vite + Ant Design 已实现最小导航和 Auth Modal，包含邮箱登录注册、Google 入口和 GitHub 未启用入口（Step 8.1、8.2、8.3 部分完成）。
 - 前端静态 MVP 界面：React 前端已实现写死 Home、Auth Modal、Create、Play 页面状态，包含固定导航、游戏卡片叠层、更多筛选、模拟登录/退出、Create 工作台和 Play 静态运行区（Frontend Step 1）。
 - 前端静态界面验证：新增 `frontend/scripts/check-static-ui.mjs` 和 `npm run test:static-ui`，覆盖关键静态 UI 标记和页面内调试面板禁用约束（Frontend Step 1）。
+- 前端 Auth API 客户端：新增统一请求入口和 Auth API 方法，支持 API base URL、cookie、统一 JSON 错误解析、网络异常和敏感字段约束检查（Frontend Step 2.1）。
+- 前端当前用户恢复：应用启动时请求 `/api/auth/me`，无 session 保持游客 Home，已登录时恢复昵称和头像（Frontend Step 2.2）。
+- 前端 Auth 交互：已接通邮箱注册、邮箱登录、退出登录、Google OAuth start、GitHub disabled 占位、页面级成功提示和错误提示（Frontend Step 2.3-2.8）。
+- 前端基础设施：已新增 mock 开关、统一错误摘要和结构化 Console 输出，支持后端未完成时继续开发 Home/Create/Play（Frontend Step 3.1-3.3）。
 
 ## Step 完成记录
 
@@ -65,6 +70,14 @@
 - 已提供 `docker compose up --build` 作为本地完整栈启动命令，覆盖 frontend、backend、PostgreSQL 和 MinIO。
 - 已记录 frontend、backend health、backend readiness、MinIO S3 API、MinIO Console 和 PostgreSQL 端口。
 - 已补充端口冲突时修改 `docker-compose.yml` host-side port 的说明。
+
+### Step 1：建立业务表迁移 ☑️ 已完成
+
+- 已在 `backend/app/models.py` 中补齐 `games`、`game_likes`、`generation_jobs`、`uploaded_assets`、`agent_logs`、`play_events` 模型。
+- 已新增 `backend/migrations/versions/0002_business_tables.py`，为业务表建立外键、唯一约束和必要索引。
+- 已新增 `backend/tests/test_migrations.py`，覆盖业务表字段、索引、唯一约束和 Alembic SQL 输出。
+- 已将 `games.tags` 调整为跨 SQLite/PostgreSQL 均可运行的 JSON 列，避免破坏现有后端测试。
+- 已验证 `pytest backend/tests/test_migrations.py -v`、`pytest backend/tests -q`、`docker compose exec -T backend alembic upgrade head` 和 `docker compose exec -T backend alembic current` 均通过，当前 revision 为 `0002_business_tables`。
 
 ### Step 2.1：创建 FastAPI 应用骨架 ☑️ 已完成
 
@@ -158,3 +171,38 @@
 - 已按静态界面反馈调整导航登录状态：未登录时不显示默认头像，只显示 `登录`；模拟登录后 `登录` 替换为头像按钮，hover/focus 头像显示用户菜单和 `退出登录`；同时为 `html`、`body`、`#root` 和页面根容器补齐深色背景与横向溢出约束，避免页面底部出现浅色条（Frontend Step 1）。
 - 已补齐 Home 静态筛选 tab 的本地切换状态，`最多游玩 / 最多点赞 / 最新发布` 可以切换 active；已将第一张游戏卡片从占位字段替换为完整模拟数据，并统一点赞 icon 为心形展示（Frontend Step 1）。
 - 已按静态界面反馈将顶部导航调整为玻璃磨砂质感，保留固定顶部布局并增加半透明叠层、背景模糊、弱白描边和内高光（Frontend Step 1）。
+- 已补齐 Home「更多筛选」下拉清单交互，点击可展开类型列表、选择类型后更新按钮文案并收起菜单（Frontend Step 1）。
+- 已将顶部导航改为视口固定定位，页面滚动时导航栏保持不动，并为页面内容补齐顶部占位避免被遮挡（Frontend Step 1）。
+
+### 2026-06-19：完成 Frontend Step 2.1 Auth API 客户端
+
+- 已新增 `frontend/src/api/client.ts`，统一处理 `VITE_API_BASE_URL`、`credentials: "include"`、JSON 错误格式、204 空响应和网络异常（Frontend Step 2.1）。
+- 已新增 `frontend/src/api/auth.ts`，封装当前用户、邮箱登录、邮箱注册、退出登录和 Google OAuth start 方法（Frontend Step 2.1）。
+- 已新增 `frontend/scripts/check-auth-client.mjs` 和 `npm run test:auth-client`，验证 Auth 客户端关键约束，并检查源码中不出现 session id、token、client secret 等敏感字段输出（Frontend Step 2.1）。
+- 已运行 `npm run test:auth-client` 和 `npm run build`，二者均通过。
+
+### 2026-06-19：完成 Frontend Step 2.2 当前用户检查
+
+- 已在 `frontend/src/App.tsx` 接入启动时的 `getCurrentUser()` 检查，应用首次加载会恢复当前用户；无 session 时静默保持游客 Home，不弹错误框（Frontend Step 2.2）。
+- 已将顶部登录态从写死文案切换为真实用户字段，优先展示 `display_name`，回退 `email`，并在存在 `avatar_url` 时展示真实头像（Frontend Step 2.2）。
+- 已保留静态阶段模拟登录能力，但改为同步写入本地 mock 用户，避免与当前用户恢复状态冲突（Frontend Step 2.2）。
+- 已新增 `frontend/scripts/check-current-user.mjs` 和 `npm run test:current-user`，先验证缺失恢复逻辑时红灯，再验证接入后的关键约束为绿灯（Frontend Step 2.2）。
+- 已运行 `npm run test:current-user`、`npm run test:auth-client` 和 `npm run build`，三者均通过。
+
+### 2026-06-19：完成 Frontend Step 2.3-2.8 Auth 全链路
+
+- 已将 `frontend/src/App.tsx` 的 Auth Modal 改为受控表单，接入邮箱格式、密码最小长度、确认密码一致性校验，并在注册/登录成功后刷新前端用户态、关闭弹窗、展示成功提示（Frontend Step 2.3、2.4）。
+- 已接入真实退出登录请求；仅在接口成功后清空当前用户和登录态，失败时保留用户态并展示错误提示（Frontend Step 2.5）。
+- 已接入 Google OAuth start，请求授权地址后通过浏览器跳转进入授权流程；回到前端后复用启动时的当前用户检查恢复登录态，并输出不含敏感信息的 Console 摘要（Frontend Step 2.6）。
+- 已保留 GitHub 按钮 disabled 占位，并提供“GitHub 登录暂未启用”的明确反馈，不触发真实 GitHub OAuth（Frontend Step 2.7）。
+- 已新增 `frontend/scripts/check-auth-ui.mjs` 和 `npm run test:auth-ui`，覆盖 Auth 表单、退出登录、Google 跳转、GitHub 占位和敏感信息约束（Frontend Step 2.8）。
+- 已运行 `npm run test:auth-ui`、`npm run test:current-user`、`npm run test:auth-client` 和 `npm run build`，四者均通过（Frontend Step 2.8）。
+
+### 2026-06-19：完成 Frontend Step 3.1-3.3 API mock、错误反馈与 Console 输出
+
+- 已新增 `frontend/src/mock/runtime.ts`，提供 `VITE_ENABLE_MOCK_API` 开关、mock Auth store，以及 Home/Create/Play 当前阶段可用的静态开发数据；关闭后端时仍可继续展示主要页面（Frontend Step 3.1）。
+- 已新增 `frontend/src/lib/errors.ts`，统一生成面向用户的错误标题、失败原因、`retryHint` 和下一步建议；`App.tsx` 中的登录、注册、退出登录和 Google 登录失败已复用这一层（Frontend Step 3.2）。
+- 已新增 `frontend/src/lib/console.ts`，统一输出时间戳、请求路径、状态码、业务状态和摘要字段，并对 password、token、secret、OAuth code 等敏感信息做脱敏（Frontend Step 3.3）。
+- 已在 `frontend/src/App.tsx` 接入页面级错误弹窗和结构化 Console 输出；当前 Home、Create、Play、Auth 的关键动作都会输出到 DevTools Console，页面内没有新增调试面板（Frontend Step 3.2、3.3）。
+- 已新增 `frontend/scripts/check-app-infra.mjs` 和 `npm run test:app-infra`，覆盖 mock 开关、错误摘要和 Console 工具接入约束（Frontend Step 3.3）。
+- 已运行 `npm run test:app-infra`、`npm run test:auth-ui`、`npm run test:current-user`、`npm run test:auth-client` 和 `npm run build`，五者均通过（Frontend Step 3.3）。

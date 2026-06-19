@@ -22,22 +22,24 @@
 │   │   ├── config.py                 配置读取：根目录 .env（Step 3）、启动校验（Step 2.4）
 │   │   ├── db.py                     数据库层：异步引擎（Step 2.2）、会话依赖（Step 2.2）
 │   │   ├── main.py                   API 入口：健康检查（Step 2.1）、错误格式（Step 2.1）、Auth router 挂载（Step 3）
-│   │   ├── models.py                 数据模型：users/sessions/oauth_accounts（Step 2.3）
+│   │   ├── models.py                 数据模型：认证表（Step 2.3）、业务表（Step 1）
 │   │   ├── schemas.py                API schema：Auth 请求响应（Step 3）
 │   │   └── security.py               安全工具：密码哈希与校验（Step 3）
 │   ├── migrations/                   迁移层：迁移环境（Step 2.2）、版本目录（Step 2.2）
 │   │   ├── env.py                    迁移入口：异步连接（Step 2.2）、配置注入（Step 2.2）
 │   │   ├── script.py.mako            迁移模板：版本生成（Step 2.2）
 │   │   └── versions/                 迁移版本：版本边界（Step 2.2）
-│   │       └── 0001_initial.py       初始迁移：users/sessions/oauth_accounts（Step 2.3）
+│   │       ├── 0001_initial.py       初始迁移：认证表基线（Step 2.3）
+│   │       └── 0002_business_tables.py 业务迁移：游戏任务表（Step 1）、事件日志表（Step 1）
 │   └── tests/                        测试层：后端测试（Step 0.2）
 │       ├── test_auth.py              认证测试：邮箱登录注册（Step 3）、Google OAuth 回跳（Step 3）
 │       ├── test_config.py            配置测试：根目录 .env（Step 3）、校验规则（Step 2.4）
-│       └── test_health.py            健康测试：接口断言（Step 2.1）、就绪断言（Step 2.2）
+│       ├── test_health.py            健康测试：接口断言（Step 2.1）、就绪断言（Step 2.2）
+│       └── test_migrations.py        迁移测试：业务表断言（Step 1）、Alembic SQL 断言（Step 1）
 ├── frontend/                         前端层：SPA 边界（Step 0.2）、构建边界（Step 0.2）
 │   ├── Dockerfile                    前端镜像：依赖安装（Step 1.1）、Vite 启动（Step 1.1）
 │   ├── .dockerignore                 构建忽略：依赖排除（Step 1.1）、产物排除（Step 1.1）
-│   ├── package.json                  包配置：脚本定义（Step 8.1）、依赖声明（Step 8.1）
+│   ├── package.json                  包配置：脚本定义（Step 8.1）、基础设施校验脚本（Frontend Step 3.3）
 │   ├── package-lock.json             依赖锁定：版本固定（Step 8.1）
 │   ├── index.html                    HTML 入口：Root 挂载（Step 8.1）
 │   ├── tsconfig.json                 TS 配置：前端编译（Step 8.1）
@@ -47,11 +49,23 @@
 │   ├── vite.config.d.ts              类型声明：待评估
 │   ├── src/                          前端源码：页面入口（Step 0.2）
 │   │   ├── main.tsx                  渲染入口：Root 创建（Step 8.1）、样式加载（Step 8.1）
-│   │   ├── App.tsx                   应用壳：静态页面（Frontend Step 1）、状态切换（Frontend Step 1）
-│   │   ├── styles.css                全局样式：Yahaha 视觉（Frontend Step 1）、响应式布局（Frontend Step 1）
+│   │   ├── App.tsx                   应用壳：静态页面（Frontend Step 1）、Mock/错误/Console 接入（Frontend Step 3.3）
+│   │   ├── api/                      前端 API：请求边界（Frontend Step 2.1）
+│   │   │   ├── client.ts             请求入口：cookie 请求（Frontend Step 2.1）、错误解析（Frontend Step 2.1）
+│   │   │   └── auth.ts               Auth 客户端：登录注册（Frontend Step 2.1）、当前用户（Frontend Step 2.1）
+│   │   ├── lib/                      前端基础库：Console 输出（Frontend Step 3.3）、错误摘要（Frontend Step 3.2）
+│   │   │   ├── console.ts            Console 工具：结构化输出（Frontend Step 3.3）、敏感字段脱敏（Frontend Step 3.3）
+│   │   │   └── errors.ts             错误工具：统一弹窗数据（Frontend Step 3.2）、重试建议（Frontend Step 3.2）
+│   │   ├── mock/                     前端 mock：开关边界（Frontend Step 3.1）、静态数据（Frontend Step 3.1）
+│   │   │   └── runtime.ts            mock 运行时：环境开关（Frontend Step 3.1）、Auth/Home/Create/Play 数据（Frontend Step 3.1）
+│   │   ├── styles.css                全局样式：Yahaha 视觉（Frontend Step 1）、错误弹窗样式（Frontend Step 3.2）
 │   │   └── vite-env.d.ts             类型声明：Vite 类型（Step 8.1）
 │   └── scripts/                      前端脚本：验证脚本（Frontend Step 1）
-│       └── check-static-ui.mjs       静态检查：界面标记（Frontend Step 1）、禁用调试面板（Frontend Step 1）
+│       ├── check-static-ui.mjs       静态检查：界面标记（Frontend Step 1）、禁用调试面板（Frontend Step 1）
+│       ├── check-auth-client.mjs     Auth 检查：请求入口（Frontend Step 2.1）、敏感字段约束（Frontend Step 2.1）
+│       ├── check-current-user.mjs    当前用户检查：启动恢复（Frontend Step 2.2）、昵称头像约束（Frontend Step 2.2）
+│       ├── check-auth-ui.mjs         Auth 界面检查：表单交互（Frontend Step 2.8）、OAuth 占位（Frontend Step 2.8）
+│       └── check-app-infra.mjs       基础设施检查：mock 开关（Frontend Step 3.1）、Console/错误边界（Frontend Step 3.3）
 ├── deployment/                       部署层：目录边界（Step 0.2）
 │   ├── .gitkeep                      占位文件：目录保留（Step 0.2）
 │   └── minio-init.sh                 存储初始化：Bucket 创建（Step 1.2）、Prefix 策略（Step 1.2）
