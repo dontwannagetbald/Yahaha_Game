@@ -123,5 +123,25 @@
 ## 尚未落地或需补齐的边界
 
 - 后端尚未实现 Phase 4 及之后的对象存储、游戏、任务、Play 相关 API。
-- 前端尚未实现正式路由、Home、Create 和 Play 页面；Create 具体界面仍需二次确认。
+- 前端尚未实现正式路由、Home、Create 和 Play 页面；Create 页面以 [pages-design.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/pages-design.md) 中的左侧任务列表、聊天上传区、生成游戏显示面板为准。
 - `frontend/vite.config.ts`、`frontend/vite.config.js` 和 `frontend/vite.config.d.ts` 当前存在职责重叠，后续推进 Step 8.1 时应统一配置来源。
+- 后续实施计划需按前端、后端、Agent 三端拆分，并以接口契约保证并行开发一致性。
+
+## 文档一致性更新记录
+
+### 2026-06-19：同步页面设计、接口契约和分端计划
+
+- 已将 `docs/tech-stack.md` 中的 Agent 说明收敛为「LangGraph 框架已定，内部节点设计后续确认」，避免提前写死 planner、asset analyzer、code generator 等角色。
+- 已将 `docs/design.md` 中官网 `Sign In` 参考样式改为本项目 `登录` / `Publish` 可复用的按钮样式说明。
+- 已修正 `docs/design-document.md` 的上传素材模型，允许文件先上传、创建任务后再绑定到 `generation_job`。
+- 已新增 `docs/api-contract.md`，作为前后端并行开发的唯一接口契约，覆盖 Auth、Games、Uploads、Jobs、Play Events 和统一错误格式。
+- 已重写 `docs/implementation-plan.md`，拆分为 Backend Plan、Frontend Plan、Agent Plan 和 Integration Plan，并在每一步标明跨端依赖和验证测试。
+- 已更新 `docs/yahaha-preview.html`，移除页面内调试面板口径，改为 DevTools Console 输出说明。
+
+### 2026-06-19：拆分三端独立实施计划
+
+- 已新增 `docs/backend-implementation-plan.md`，后端开发者可独立实现数据模型、存储、API、发布流程和 Agent runner 接入。
+- 已新增 `docs/frontend-implementation-plan.md`，前端开发者可基于 `api-contract.md` 使用 mock 独立实现 Home、Create、Play 和 Auth Modal。
+- 已新增 `docs/agent-implementation-plan.md`，Agent 开发者可独立实现执行器边界、Mock provider、OpenAI-compatible provider、产物协议和日志。
+- 已将 `docs/implementation-plan.md` 改为总索引和最终集成验收清单，避免三端计划与总计划重复维护。
+- 已统一三端实施计划编号为 `Step X` / `Step X.X` 格式，并清理总索引和跨端依赖中的旧端侧字母编号引用。

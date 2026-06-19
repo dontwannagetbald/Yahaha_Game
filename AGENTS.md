@@ -20,8 +20,8 @@ Common relevant skills:
 If a skill conflicts with higher-priority system, developer, or explicit user instructions, follow the higher-priority instruction.
 
 重要提示！！
-写任何代码前必须完整阅读docs/@architecture.md
-写任何代码前必须完整阅读docs/@design-document.md
+写任何代码前必须完整阅读docs/architecture.md
+写任何代码前必须完整阅读docs/design-document.md
 要等用户确认step x.x完成后，再进行下一个stepx.x的操作。
 文档职责区分：`docs/architecture.md` 只维护项目 layer/layout、目录边界和每个文件的作用；不要在里面写已实现功能索引、完成度汇总或待补齐边界。
 `docs/architecture.md` 的文字描述必须使用短格式：`文件作用：xx 功能（Step x.x）、xx 功能（Step x.x）`；文件作用和功能都用几个字概括即可。

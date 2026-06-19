@@ -58,8 +58,13 @@
 └── docs/                             文档层：设计文档（Step 0.2）、交付记录（Step 0.2）
     ├── architecture.md               架构文档：Layer 维护（Step 0.1）、文件职责（Step 0.2）
     ├── design-document.md            产品设计：用户旅程（Step 0.1）、数据模型（Step 0.1）
+    ├── api-contract.md               接口契约：前后端 API、错误格式
+    ├── backend-implementation-plan.md 后端计划：API、存储、数据模型
+    ├── frontend-implementation-plan.md 前端计划：页面、交互、mock
+    ├── agent-implementation-plan.md   Agent 计划：执行器、产物协议
     ├── design.md                     设计系统：视觉规则（Step 0.1）、组件规则（Step 0.1）
-    ├── implementation-plan.md        实施计划：Step 指令（Step 0.1）、验证条件（Step 0.1）
+    ├── implementation-plan.md        计划索引：三端入口、集成验收
+    ├── pages-design.md               页面设计：页面组件、Console 输出规范
     ├── tech-stack.md                 技术栈：选型记录（Step 0.1）、架构方向（Step 0.1）
     └── progress.md                   进度文档：功能索引（Step 0.1）、待补边界（Step 0.1）
 ```
