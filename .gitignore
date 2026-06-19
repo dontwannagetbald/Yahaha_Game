@@ -12,3 +12,7 @@ dist/
 *.tsbuildinfo
 
 postgres-data/
+
+# Local agent tooling
+.agents/
+skills-lock.json

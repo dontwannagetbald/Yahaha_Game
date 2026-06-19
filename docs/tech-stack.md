@@ -36,6 +36,9 @@
 - Session ID 存储在 `httpOnly` cookie 中。
 - FastAPI session middleware 负责读写会话，会话数据落 PostgreSQL。
 - 受保护 API 和 Create 页面必须校验有效登录态。
+- Google OAuth 需要在 MVP 中真实跑通，包括授权跳转、回调、账号创建/绑定和 session 写入。
+- GitHub OAuth 先保留数据模型和接口设计，后续版本再真实跑通。
+- `.env.example` 需要包含 Google OAuth client id、client secret、redirect URI，以及 GitHub OAuth 的预留配置项。
 
 ### 游戏产物格式
 

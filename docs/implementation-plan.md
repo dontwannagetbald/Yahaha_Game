@@ -52,6 +52,8 @@
 
 - 新增 `.env.example`。
 - 列出前端、后端、PostgreSQL、MinIO、Session、OpenAI-compatible API、Mock provider 相关变量。
+- 列出 Google OAuth 所需 client id、client secret、redirect URI。
+- 列出 GitHub OAuth 预留变量，但标注 MVP 不真实跑通。
 - 不写任何真实密钥。
 - 每个变量需要有简短用途说明。
 
@@ -60,6 +62,8 @@
 - `.env.example` 存在。
 - 文件中没有真实 API key、密码或访问令牌。
 - 覆盖数据库、对象存储、模型服务、session secret、前后端地址。
+- 覆盖 Google OAuth 配置。
+- GitHub OAuth 变量清楚标注为后续启用。
 
 ## Phase 1：Docker Compose 基础设施
 
@@ -97,7 +101,7 @@
 - 上传测试对象到 uploads 路径后，不能直接 public 读取。
 - 能生成 presigned URL 访问私有对象。
 
-### Step 1.3：提供一条启动命令
+### Step 1.3：提供一条启动命令 ☑️ 已完成
 
 指令：
 
@@ -113,7 +117,7 @@
 
 ## Phase 2：后端基础
 
-### Step 2.1：创建 FastAPI 应用骨架
+### Step 2.1：创建 FastAPI 应用骨架 ☑️ 已完成
 
 指令：
 
@@ -130,7 +134,7 @@
 - 从前端开发服务器 origin 请求 health check 不被 CORS 拦截。
 - 后端启动日志无错误。
 
-### Step 2.2：连接 PostgreSQL
+### Step 2.2：连接 PostgreSQL ☑️ 已完成
 
 指令：
 
@@ -146,23 +150,27 @@
 - 迁移命令可执行。
 - 空迁移或初始化迁移执行成功。
 
-### Step 2.3：创建核心数据表
+### Step 2.3：创建 Phase 4 前核心数据表 ☑️ 已完成
 
 指令：
 
-- 创建用户、session、游戏、生成任务、上传素材、Agent 日志、Play 事件相关表。
-- 表字段以 `design-document.md` 的数据模型为准。
-- 为 owner、status、published_at、created_at 建立必要索引。
-- 保留软删除字段或 deleted 状态。
+- 创建 Phase 4 前必需的用户、session、OAuth 账号绑定表。
+- 暂不创建游戏、生成任务、上传素材、Agent 日志、Play 事件相关表。
+- 创建 OAuth 账号绑定表。
+- 表字段以 `design-document.md` 的 Phase 4 前数据模型为准。
+- 为 user_id、session_id 建立必要索引。
+- 为 OAuth provider 和 provider_user_id 建立唯一约束。
+- 将对象存储和游戏相关表放到 Phase 4 及后续阶段创建。
 
 验证：
 
 - 迁移执行成功。
-- 数据库中能看到所有核心表。
+- 数据库中能看到 `users`、`sessions`、`oauth_accounts`。
 - 表字段和设计文档一致。
+- `oauth_accounts` 表存在，且 `(provider, provider_user_id)` 唯一。
 - 重复执行迁移不会破坏已有表。
 
-### Step 2.4：实现基础配置校验
+### Step 2.4：实现基础配置校验 ☑️ 已完成
 
 指令：
 
@@ -180,7 +188,7 @@
 
 ## Phase 3：认证与会话
 
-### Step 3.1：实现邮箱注册
+### Step 3.1：实现邮箱注册 ☑️ 已完成
 
 指令：
 
@@ -197,7 +205,7 @@
 - 无效邮箱注册失败。
 - 数据库中不保存明文密码。
 
-### Step 3.2：实现邮箱登录
+### Step 3.2：实现邮箱登录 ☑️ 已完成
 
 指令：
 
@@ -214,7 +222,7 @@
 - Cookie 为 httpOnly。
 - sessions 表中有对应 session 记录。
 
-### Step 3.3：实现当前用户与退出登录
+### Step 3.3：实现当前用户与退出登录 ☑️ 已完成
 
 指令：
 
@@ -245,6 +253,47 @@
 - 未登录不能上传素材。
 - 非 owner 不能访问他人的 draft 游戏。
 - owner 可以访问自己的 draft 游戏。
+
+### Step 3.5：实现 Google OAuth 登录 ☑️ 已完成
+
+指令：
+
+- 实现 Google OAuth 授权开始接口。
+- 实现 Google OAuth 回调接口。
+- 使用 `state` 参数防止 CSRF。
+- 回调中用授权码换取 token，并获取 Google 用户唯一 ID、邮箱、展示名和头像。
+- 如果已有 Google 绑定记录，直接登录对应用户。
+- 如果没有绑定记录，但邮箱已注册，则绑定到已有用户。
+- 如果邮箱不存在，则创建新用户并绑定 Google 账号。
+- 登录成功后创建服务端 session，并写入 httpOnly cookie。
+- 回调完成后跳回前端原页面或默认页面。
+
+验证：
+
+- 点击 Google 登录可以跳转到 Google 授权页。
+- 授权成功后能回到应用。
+- 首次 Google 登录会创建用户和 `oauth_accounts` 绑定记录。
+- 再次 Google 登录会复用同一个用户，不重复创建账号。
+- 邮箱已通过邮箱注册时，Google 登录会绑定到已有用户。
+- 登录成功后 `GET /api/auth/me` 返回当前用户。
+- 登录成功后可以访问 Create 受保护页面。
+- `state` 缺失或错误时回调失败。
+
+### Step 3.6：保留 GitHub OAuth 设计占位 ☑️ 已完成
+
+指令：
+
+- 在后端保留 GitHub OAuth start 和 callback 路由设计。
+- MVP 中 GitHub OAuth 可以返回未启用状态。
+- 数据模型必须支持 `provider=github`。
+- README 或完成度说明中标注 GitHub OAuth 后续版本真实跑通。
+
+验证：
+
+- GitHub OAuth 路由存在或有明确未启用响应。
+- `oauth_accounts.provider` 支持 github。
+- GitHub 未启用不会影响邮箱登录和 Google 登录。
+- 文档明确说明 GitHub OAuth 后续实现。
 
 ## Phase 4：对象存储与产物协议
 
@@ -546,6 +595,8 @@
 - 实现登录/注册模式切换。
 - 表单使用邮箱和密码。
 - 注册态显示确认密码。
+- 增加 Google 登录按钮，并连接真实 Google OAuth 授权开始接口。
+- 增加 GitHub 登录按钮或占位入口，但明确展示暂未启用。
 - 登录成功后刷新当前用户状态。
 - 错误信息在弹窗内展示。
 
@@ -555,6 +606,9 @@
 - 可以登录已注册用户。
 - 错误密码有明确提示。
 - 注册重复邮箱有明确提示。
+- 点击 Google 登录能进入 Google OAuth 授权流程。
+- Google OAuth 成功回调后弹窗关闭或页面恢复登录态。
+- GitHub 登录入口不会误导为已可用能力。
 - 登录成功后弹窗关闭并显示用户状态。
 
 ## Phase 9：Home 前端
@@ -825,6 +879,8 @@
 - 退出登录。
 - 使用同一账号重新登录。
 - 刷新页面验证 session。
+- 使用 Google OAuth 注册或登录一个账号。
+- 查看 OAuth 登录后的 session 状态和受保护页面访问控制。
 
 验证：
 
@@ -833,6 +889,11 @@
 - 重新登录成功。
 - 刷新后仍保持登录态。
 - httpOnly cookie 存在。
+- Google OAuth 授权回调成功。
+- Google OAuth 登录后 `oauth_accounts` 有绑定记录。
+- Google OAuth 登录后 `GET /api/auth/me` 返回用户。
+- Google OAuth 登录后可以访问 Create。
+- GitHub OAuth 标注为后续实现，不作为 MVP 真实验收项。
 
 ### Step 12.3：验证 Create 到 Publish 链路
 

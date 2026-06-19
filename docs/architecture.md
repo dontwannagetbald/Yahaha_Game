@@ -5,23 +5,35 @@
 ```text
 .
 ├── AGENTS.md                         协作规则：中文响应（Step 0.1）、文档分工（Step 0.1）
-├── README.md                         启动说明：Compose 命令（Step 1.3）、检查命令（Step 1.3）
+├── README.md                         启动说明：Compose 命令（Step 1.3）、端口说明（Step 1.3）
 ├── prd.md                            原始需求：需求留存（Step 0.1）、验收约束（Step 0.1）
 ├── .env.example                      环境样例：前后端地址（Step 0.3）、存储模型变量（Step 0.3）
 ├── .gitignore                        忽略规则：依赖排除（Step 0.1）、缓存排除（Step 0.1）
-├── docker-compose.yml                本地编排：基础服务（Step 1.1）、持久卷（Step 1.1）
+├── docker-compose.yml                本地编排：基础服务（Step 1.1）、配置透传（Step 2.4）
 ├── backend/                          后端层：API 边界（Step 0.2）、测试边界（Step 0.2）
-│   ├── Dockerfile                    后端镜像：依赖安装（Step 1.1）、服务启动（Step 1.1）
+│   ├── Dockerfile                    后端镜像：依赖安装（Step 1.1）、迁移启动（Step 2.2）
 │   ├── .dockerignore                 构建忽略：缓存排除（Step 1.1）、镜像瘦身（Step 1.1）
-│   ├── requirements.txt              依赖清单：FastAPI 依赖（Step 2.1）、数据库依赖（Step 2.2）
+│   ├── requirements.txt              依赖清单：FastAPI 依赖（Step 2.1）、迁移依赖（Step 2.2）、Auth 测试依赖（Step 3）
 │   ├── pytest.ini                    测试配置：导入路径（Step 2.1）
+│   ├── alembic.ini                   迁移配置：脚本定位（Step 2.2）、连接配置（Step 2.2）
 │   ├── app/                          应用包：代码边界（Step 0.2）
 │   │   ├── __init__.py               包标记：模块导入（Step 0.2）
-│   │   ├── config.py                 配置读取：环境加载（Step 2.2）、数据库地址（Step 2.2）
+│   │   ├── auth.py                   认证路由：邮箱登录注册（Step 3）、Google 回跳（Step 3）、GitHub 占位（Step 3）
+│   │   ├── config.py                 配置读取：根目录 .env（Step 3）、启动校验（Step 2.4）
 │   │   ├── db.py                     数据库层：异步引擎（Step 2.2）、会话依赖（Step 2.2）
-│   │   └── main.py                   API 入口：健康检查（Step 2.1）、就绪检查（Step 2.2）
+│   │   ├── main.py                   API 入口：健康检查（Step 2.1）、错误格式（Step 2.1）、Auth router 挂载（Step 3）
+│   │   ├── models.py                 数据模型：users/sessions/oauth_accounts（Step 2.3）
+│   │   ├── schemas.py                API schema：Auth 请求响应（Step 3）
+│   │   └── security.py               安全工具：密码哈希与校验（Step 3）
+│   ├── migrations/                   迁移层：迁移环境（Step 2.2）、版本目录（Step 2.2）
+│   │   ├── env.py                    迁移入口：异步连接（Step 2.2）、配置注入（Step 2.2）
+│   │   ├── script.py.mako            迁移模板：版本生成（Step 2.2）
+│   │   └── versions/                 迁移版本：版本边界（Step 2.2）
+│   │       └── 0001_initial.py       初始迁移：users/sessions/oauth_accounts（Step 2.3）
 │   └── tests/                        测试层：后端测试（Step 0.2）
-│       └── test_health.py            健康测试：接口断言（Step 2.1）
+│       ├── test_auth.py              认证测试：邮箱登录注册（Step 3）、Google OAuth 回跳（Step 3）
+│       ├── test_config.py            配置测试：根目录 .env（Step 3）、校验规则（Step 2.4）
+│       └── test_health.py            健康测试：接口断言（Step 2.1）、就绪断言（Step 2.2）
 ├── frontend/                         前端层：SPA 边界（Step 0.2）、构建边界（Step 0.2）
 │   ├── Dockerfile                    前端镜像：依赖安装（Step 1.1）、Vite 启动（Step 1.1）
 │   ├── .dockerignore                 构建忽略：依赖排除（Step 1.1）、产物排除（Step 1.1）
@@ -35,8 +47,8 @@
 │   ├── vite.config.d.ts              类型声明：待评估
 │   └── src/                          前端源码：页面入口（Step 0.2）
 │       ├── main.tsx                  渲染入口：Root 创建（Step 8.1）、样式加载（Step 8.1）
-│       ├── App.tsx                   应用壳：占位页面（Step 8.1）、API 地址展示（Step 8.1）
-│       ├── styles.css                全局样式：基础字体（Step 8.1）、页面壳样式（Step 8.1）
+│       ├── App.tsx                   应用壳：Auth Modal（Step 8.3）、session 状态（Step 8.2）
+│       ├── styles.css                全局样式：Yahaha 深色基线（Step 8.1）、Auth 页面壳样式（Step 8.3）
 │       └── vite-env.d.ts             类型声明：Vite 类型（Step 8.1）
 ├── deployment/                       部署层：目录边界（Step 0.2）
 │   ├── .gitkeep                      占位文件：目录保留（Step 0.2）
