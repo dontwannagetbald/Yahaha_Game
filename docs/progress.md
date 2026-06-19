@@ -17,6 +17,8 @@
 - 邮箱认证：已实现邮箱注册、邮箱登录、退出登录、`/api/auth/me` 和 httpOnly session cookie（Step 3.1、3.2、3.3）。
 - OAuth 认证：已实现 Google OAuth start/callback 代码路径和账号创建/绑定规则；backend 可从根目录 `.env` 和 Docker Compose 环境读取真实 Google 配置。GitHub OAuth 为后续版本占位（Step 3.5、3.6）。
 - 前端 Auth 基线：React + Vite + Ant Design 已实现最小导航和 Auth Modal，包含邮箱登录注册、Google 入口和 GitHub 未启用入口（Step 8.1、8.2、8.3 部分完成）。
+- 前端静态 MVP 界面：React 前端已实现写死 Home、Auth Modal、Create、Play 页面状态，包含固定导航、游戏卡片叠层、更多筛选、模拟登录/退出、Create 工作台和 Play 静态运行区（Frontend Step 1）。
+- 前端静态界面验证：新增 `frontend/scripts/check-static-ui.mjs` 和 `npm run test:static-ui`，覆盖关键静态 UI 标记和页面内调试面板禁用约束（Frontend Step 1）。
 
 ## Step 完成记录
 
@@ -145,3 +147,14 @@
 - 已新增 `docs/agent-implementation-plan.md`，Agent 开发者可独立实现执行器边界、Mock provider、OpenAI-compatible provider、产物协议和日志。
 - 已将 `docs/implementation-plan.md` 改为总索引和最终集成验收清单，避免三端计划与总计划重复维护。
 - 已统一三端实施计划编号为 `Step X` / `Step X.X` 格式，并清理总索引和跨端依赖中的旧端侧字母编号引用。
+
+### 2026-06-19：完成 Frontend Step 0-1 静态界面
+
+- 已按 `docs/frontend-implementation-plan.md` 完成第二大步前的前端工作：Step 0.1-0.3 和 Step 1.1-1.10 均已验证通过。
+- 已将 `frontend/src/App.tsx` 从 Auth 基线替换为静态 MVP 页面壳，支持 Home、Create、Play、Auth Modal、模拟登录、模拟退出和页面内切换（Frontend Step 1）。
+- 已将 `frontend/src/styles.css` 更新为 Yahaha 深色视觉、固定顶部导航、大屏游戏卡片网格、封面标签叠层、封面统计叠层、Create 工作台和 Play 静态运行区样式（Frontend Step 1）。
+- 已新增 `frontend/scripts/check-static-ui.mjs`，并在 `frontend/package.json` 中新增 `test:static-ui` 脚本；红灯验证确认旧界面缺少目标标记，绿灯验证确认新界面通过（Frontend Step 1）。
+- 已运行 `npm run test:static-ui` 和 `npm run build`，二者均通过。
+- 已按静态界面反馈调整导航登录状态：未登录时不显示默认头像，只显示 `登录`；模拟登录后 `登录` 替换为头像按钮，hover/focus 头像显示用户菜单和 `退出登录`；同时为 `html`、`body`、`#root` 和页面根容器补齐深色背景与横向溢出约束，避免页面底部出现浅色条（Frontend Step 1）。
+- 已补齐 Home 静态筛选 tab 的本地切换状态，`最多游玩 / 最多点赞 / 最新发布` 可以切换 active；已将第一张游戏卡片从占位字段替换为完整模拟数据，并统一点赞 icon 为心形展示（Frontend Step 1）。
+- 已按静态界面反馈将顶部导航调整为玻璃磨砂质感，保留固定顶部布局并增加半透明叠层、背景模糊、弱白描边和内高光（Frontend Step 1）。

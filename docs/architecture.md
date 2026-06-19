@@ -45,11 +45,13 @@
 │   ├── vite.config.ts                Vite 配置：React 插件（Step 8.1）、开发服务（Step 8.1）
 │   ├── vite.config.js                Vite 配置副本：待收敛
 │   ├── vite.config.d.ts              类型声明：待评估
-│   └── src/                          前端源码：页面入口（Step 0.2）
-│       ├── main.tsx                  渲染入口：Root 创建（Step 8.1）、样式加载（Step 8.1）
-│       ├── App.tsx                   应用壳：Auth Modal（Step 8.3）、session 状态（Step 8.2）
-│       ├── styles.css                全局样式：Yahaha 深色基线（Step 8.1）、Auth 页面壳样式（Step 8.3）
-│       └── vite-env.d.ts             类型声明：Vite 类型（Step 8.1）
+│   ├── src/                          前端源码：页面入口（Step 0.2）
+│   │   ├── main.tsx                  渲染入口：Root 创建（Step 8.1）、样式加载（Step 8.1）
+│   │   ├── App.tsx                   应用壳：静态页面（Frontend Step 1）、状态切换（Frontend Step 1）
+│   │   ├── styles.css                全局样式：Yahaha 视觉（Frontend Step 1）、响应式布局（Frontend Step 1）
+│   │   └── vite-env.d.ts             类型声明：Vite 类型（Step 8.1）
+│   └── scripts/                      前端脚本：验证脚本（Frontend Step 1）
+│       └── check-static-ui.mjs       静态检查：界面标记（Frontend Step 1）、禁用调试面板（Frontend Step 1）
 ├── deployment/                       部署层：目录边界（Step 0.2）
 │   ├── .gitkeep                      占位文件：目录保留（Step 0.2）
 │   └── minio-init.sh                 存储初始化：Bucket 创建（Step 1.2）、Prefix 策略（Step 1.2）
