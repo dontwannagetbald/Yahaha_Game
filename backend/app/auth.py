@@ -16,6 +16,10 @@ from app.config import settings
 from app.db import get_session
 from app.models import OAuthAccount, Session, User
 from app.schemas import (
+    AvatarUploadCompleteRequest,
+    AvatarUploadCompleteResponse,
+    AvatarUploadPresignRequest,
+    AvatarUploadPresignResponse,
     AuthResponse,
     LoginRequest,
     MessageResponse,
@@ -24,9 +28,16 @@ from app.schemas import (
     UserResponse,
 )
 from app.security import hash_password, verify_password
+from app.storage import ObjectStorageService
 
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+MAX_AVATAR_UPLOAD_SIZE_BYTES = 2 * 1024 * 1024
+ALLOWED_AVATAR_MIME_TYPES = {"image/png", "image/jpeg", "image/webp"}
+
+
+def get_storage_service() -> ObjectStorageService:
+    return ObjectStorageService(settings)
 
 
 def serialize_user(user: User) -> UserResponse:
@@ -137,6 +148,7 @@ async def register(
         email=email,
         password_hash=hash_password(payload.password),
         display_name=payload.display_name or email.split("@", 1)[0],
+        avatar_url=payload.avatar_url,
     )
     db.add(user)
     await db.flush()
@@ -192,6 +204,45 @@ async def logout(
 @router.get("/me", response_model=AuthResponse)
 async def me(user: Annotated[User, Depends(get_current_user)]) -> AuthResponse:
     return AuthResponse(user=serialize_user(user))
+
+
+@router.post("/avatar/presign", response_model=AvatarUploadPresignResponse)
+async def presign_registration_avatar(
+    payload: AvatarUploadPresignRequest,
+    storage: Annotated[ObjectStorageService, Depends(get_storage_service)],
+) -> AvatarUploadPresignResponse:
+    if payload.mime_type not in ALLOWED_AVATAR_MIME_TYPES:
+        raise HTTPException(status_code=400, detail="Avatar must be png, jpg, or webp")
+    if payload.size_bytes > MAX_AVATAR_UPLOAD_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="Avatar exceeds 2MB limit")
+
+    upload_id = uuid.uuid4()
+    object_key = storage.build_registration_avatar_object_key(
+        upload_id=upload_id,
+        filename=payload.filename,
+    )
+    presigned = storage.build_presigned_upload_url(object_key)
+    return AvatarUploadPresignResponse(
+        upload_id=str(upload_id),
+        object_key=object_key,
+        upload_url=presigned.url,
+        expires_in=presigned.expires_in,
+    )
+
+
+@router.post("/avatar/complete", response_model=AvatarUploadCompleteResponse)
+async def complete_registration_avatar(
+    payload: AvatarUploadCompleteRequest,
+    storage: Annotated[ObjectStorageService, Depends(get_storage_service)],
+) -> AvatarUploadCompleteResponse:
+    expected_prefix = f"avatars/registrations/{payload.upload_id}/"
+    if not payload.object_key.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="Avatar upload does not match upload id")
+    if payload.mime_type not in ALLOWED_AVATAR_MIME_TYPES:
+        raise HTTPException(status_code=400, detail="Avatar must be png, jpg, or webp")
+    return AvatarUploadCompleteResponse(
+        avatar_url=storage.build_public_read_url(payload.object_key)
+    )
 
 
 def build_google_auth_url(state: str) -> str:

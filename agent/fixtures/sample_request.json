@@ -1,0 +1,18 @@
+{
+  "prompt": "做一个俯视角霓虹风躲避收集小游戏，玩家控制机器人在地图中躲开障碍并收集能量。",
+  "chat_history": [
+    {
+      "role": "user",
+      "content": "我想做一个科幻风小游戏。"
+    }
+  ],
+  "uploaded_assets": [
+    {
+      "asset_id": "asset-1",
+      "filename": "robot.png",
+      "mime_type": "image/png",
+      "size_bytes": 1024,
+      "object_key": "uploads/u1/a1/robot.png"
+    }
+  ]
+}

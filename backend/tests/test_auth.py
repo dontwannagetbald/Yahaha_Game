@@ -60,6 +60,33 @@ def test_email_register_creates_user_session_and_no_oauth(client, session_factor
     asyncio.run(inspect())
 
 
+def test_email_register_persists_display_name_and_avatar(client, session_factory):
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "email": "creator@example.com",
+            "password": "password123",
+            "display_name": "创作者小王",
+            "avatar_url": "http://localhost:9000/yahaha-game/avatars/registrations/demo/avatar.png",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["user"]["display_name"] == "创作者小王"
+    assert response.json()["user"]["avatar_url"].endswith("/avatar.png")
+
+    async def inspect():
+        async with session_factory() as session:
+            user = (await session.execute(select(User))).scalars().one()
+            assert user.display_name == "创作者小王"
+            assert user.avatar_url is not None
+            assert user.avatar_url.endswith("/avatar.png")
+
+    import asyncio
+
+    asyncio.run(inspect())
+
+
 def test_duplicate_email_register_is_rejected(client):
     payload = {"email": "user@example.com", "password": "password123"}
 
@@ -101,6 +128,75 @@ def test_email_login_rejects_wrong_password(client):
     )
 
     assert response.status_code == 401
+
+
+def test_email_register_rejects_weak_password(client):
+    response = client.post(
+        "/api/auth/register",
+        json={"email": "user@example.com", "password": "abcdefgh"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_avatar_presign_returns_unsigned_registration_contract(client):
+    class StubStorageService:
+        def build_registration_avatar_object_key(self, *, upload_id, filename: str) -> str:
+            return f"avatars/registrations/{upload_id}/avatar.png"
+
+        def build_presigned_upload_url(self, object_key: str, *, expires_in: int = 900):
+            return type(
+                "Result",
+                (),
+                {
+                    "url": f"http://minio.local/presigned/{object_key}",
+                    "expires_in": expires_in,
+                },
+            )()
+
+    app.dependency_overrides[auth_module.get_storage_service] = lambda: StubStorageService()
+    try:
+        response = client.post(
+            "/api/auth/avatar/presign",
+            json={
+                "filename": "avatar.png",
+                "mime_type": "image/png",
+                "size_bytes": 2048,
+            },
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["object_key"].startswith("avatars/registrations/")
+        assert body["upload_url"].startswith("http://minio.local/presigned/")
+    finally:
+        app.dependency_overrides.pop(auth_module.get_storage_service, None)
+
+
+def test_avatar_complete_returns_public_avatar_url(client):
+    class StubStorageService:
+        def build_public_read_url(self, object_key: str) -> str:
+            return f"http://localhost:9000/yahaha-game/{object_key}"
+
+    app.dependency_overrides[auth_module.get_storage_service] = lambda: StubStorageService()
+    try:
+        response = client.post(
+            "/api/auth/avatar/complete",
+            json={
+                "upload_id": "11111111-1111-1111-1111-111111111111",
+                "object_key": "avatars/registrations/11111111-1111-1111-1111-111111111111/avatar.png",
+                "filename": "avatar.png",
+                "mime_type": "image/png",
+                "size_bytes": 2048,
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "avatar_url": "http://localhost:9000/yahaha-game/avatars/registrations/11111111-1111-1111-1111-111111111111/avatar.png"
+        }
+    finally:
+        app.dependency_overrides.pop(auth_module.get_storage_service, None)
 
 
 @pytest.mark.asyncio

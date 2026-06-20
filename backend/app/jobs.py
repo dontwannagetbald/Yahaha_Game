@@ -5,14 +5,22 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.agent_runner import (
+    AgentLogEvent,
+    AgentRunFailure,
+    AgentRunInput,
+    AgentRunSuccess,
+    UploadedAssetPayload,
+    get_agent_runner,
+)
 from app.auth import get_current_user
 from app.db import get_session
-from app.models import AgentLog, GenerationJob, UploadedAsset, User
+from app.models import AgentLog, Game, GenerationJob, UploadedAsset, User
 
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
@@ -58,9 +66,86 @@ async def _get_owned_job(
     return job
 
 
+async def _append_agent_logs(
+    db: AsyncSession, *, job_id: uuid.UUID, logs: list[AgentLogEvent]
+) -> None:
+    for log in logs:
+        db.add(
+            AgentLog(
+                job_id=job_id,
+                step=log.step,
+                level=log.level,
+                message=log.message,
+                created_at=log.created_at,
+            )
+        )
+
+
+async def _run_job_in_background(
+    *,
+    session_factory,
+    job_id: uuid.UUID,
+    runner_input: AgentRunInput,
+) -> None:
+    runner = get_agent_runner()
+    async with session_factory() as session:
+        job = await session.get(GenerationJob, job_id)
+        if job is None:
+            return
+
+        job.status = "running"
+        job.started_at = datetime.now(timezone.utc)
+        await session.commit()
+
+        result = await runner.run(runner_input)
+
+        refreshed_job = await session.get(GenerationJob, job_id)
+        if refreshed_job is None:
+            return
+
+        await _append_agent_logs(
+            session,
+            job_id=job_id,
+            logs=list(result.logs),
+        )
+
+        if isinstance(result, AgentRunSuccess):
+            game = Game(
+                owner_id=refreshed_job.user_id,
+                title=result.title,
+                description=result.description,
+                cover_url=result.cover_url,
+                tags=result.tags,
+                status="draft",
+                manifest_url=result.manifest_url,
+                artifact_base_url=result.artifact_base_url,
+            )
+            session.add(game)
+            await session.flush()
+
+            refreshed_job.status = "succeeded"
+            refreshed_job.finished_at = datetime.now(timezone.utc)
+            refreshed_job.game_id = game.id
+            refreshed_job.artifact_prefix = result.artifact_prefix
+            refreshed_job.manifest_url = result.manifest_url
+            refreshed_job.result_summary = result.result_summary
+            refreshed_job.error_message = None
+        elif isinstance(result, AgentRunFailure):
+            refreshed_job.status = "failed"
+            refreshed_job.finished_at = datetime.now(timezone.utc)
+            refreshed_job.error_message = result.error_message
+        else:
+            refreshed_job.status = "failed"
+            refreshed_job.finished_at = datetime.now(timezone.utc)
+            refreshed_job.error_message = "Unsupported agent runner result"
+
+        await session.commit()
+
+
 @router.post("", status_code=201)
 async def create_job(
     payload: CreateJobRequest,
+    background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_session)],
 ) -> dict[str, Any]:
@@ -89,7 +174,33 @@ async def create_job(
     await db.flush()
     for asset in assets:
         asset.job_id = job.id
+
+    runner_input = AgentRunInput(
+        job_id=job.id,
+        user_id=user.user_id,
+        prompt=payload.prompt,
+        confirmation=payload.confirmation,
+        uploaded_assets=[
+            UploadedAssetPayload(
+                asset_id=asset.id,
+                filename=asset.filename,
+                mime_type=asset.mime_type,
+                size_bytes=asset.size_bytes,
+                object_key=asset.object_key,
+                purpose=asset.purpose,
+            )
+            for asset in assets
+        ],
+    )
+
+    session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
     await db.commit()
+    background_tasks.add_task(
+        _run_job_in_background,
+        session_factory=session_factory,
+        job_id=job.id,
+        runner_input=runner_input,
+    )
     return {
         "job_id": str(job.id),
         "status": job.status,

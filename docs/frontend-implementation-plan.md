@@ -109,55 +109,55 @@
 
 本阶段只接 Auth，不接游戏列表、任务、发布等业务 API。
 
-### Step 2.1：建立 Auth API 客户端
+### Step 2.1：建立 Auth API 客户端 ☑️ 已完成
 
 - [ ] 指令：建立统一请求入口，处理 API base URL、cookie、JSON 错误格式和网络异常。
 - [ ] 指令：Auth 请求必须携带 cookie。
 - [ ] 指令：不要在 Console 中输出 password、session id、OAuth code、token 或 secret。
 - [ ] 验证：调用 `GET /api/auth/me` 能区分已登录和未登录；网络失败时显示明确错误；Console 中没有敏感字段。
 
-### Step 2.2：接入当前用户检查
+### Step 2.2：接入当前用户检查 ☑️ 已完成
 
 - [ ] 指令：应用启动时请求当前用户。
 - [ ] 指令：未登录时保持 Home 游客状态，不弹错误框。
 - [ ] 指令：已登录时展示头像和昵称。
 - [ ] 验证：无 session 打开页面不会弹错误；有 session 打开页面能恢复已登录导航；刷新页面后登录态仍正确。
 
-### Step 2.3：接入邮箱注册
+### Step 2.3：接入邮箱注册 ☑️ 已完成
 
 - [ ] 指令：注册态提交邮箱、密码和确认密码。
 - [ ] 指令：前端校验邮箱格式、密码最小长度、两次密码一致。
 - [ ] 指令：注册成功后关闭弹窗、刷新当前用户、显示成功提示。
 - [ ] 验证：新邮箱注册成功后导航变为已登录；重复邮箱显示明确错误；密码不一致不发送注册请求；注册失败错误保留在弹窗内或错误提示中。
 
-### Step 2.4：接入邮箱登录
+### Step 2.4：接入邮箱登录 ☑️ 已完成
 
 - [ ] 指令：登录态提交邮箱和密码。
 - [ ] 指令：登录成功后关闭弹窗、刷新当前用户、显示成功提示。
 - [ ] 指令：登录失败时不关闭弹窗。
 - [ ] 验证：正确账号密码登录成功；错误密码显示明确错误；登录成功后未登录受保护入口可以进入 Create；登录失败后页面仍停留在 Auth Modal。
 
-### Step 2.5：接入退出登录
+### Step 2.5：接入退出登录 ☑️ 已完成
 
 - [ ] 指令：点击 hover 菜单中的 `退出登录` 调用退出 API。
 - [ ] 指令：退出成功后清除前端用户状态并回到未登录 Home。
 - [ ] 指令：退出失败时显示错误，不提前清除用户状态。
 - [ ] 验证：退出成功后导航恢复默认头像和 `登录`；退出后点击 `创建游戏` 弹 Auth Modal；退出失败时用户态不被错误清空。
 
-### Step 2.6：接入 Google OAuth 入口
+### Step 2.6：接入 Google OAuth 入口 ☑️ 已完成
 
 - [ ] 指令：点击 Google 按钮调用 Google OAuth start 接口。
 - [ ] 指令：拿到授权地址后跳转到 Google 授权页。
 - [ ] 指令：OAuth 回到前端后刷新当前用户。
 - [ ] 验证：点击 Google 登录能进入授权流程；授权成功后回到应用并显示 OAuth 昵称和头像；OAuth 失败时显示明确错误；Console 只输出 provider、user_id、nickname、session 检查摘要，不输出敏感信息。
 
-### Step 2.7：保留 GitHub 占位
+### Step 2.7：保留 GitHub 占位 ☑️ 已完成
 
 - [ ] 指令：GitHub 按钮展示为 disabled 或明确未启用状态。
 - [ ] 指令：不要触发真实 GitHub OAuth。
 - [ ] 验证：用户不会误以为 GitHub 已可用；点击或悬停时能看到未启用反馈；GitHub 占位不影响邮箱登录和 Google 登录。
 
-### Step 2.8：第二大步交付验证
+### Step 2.8：第二大步交付验证 ☑️ 已完成
 
 - [ ] 指令：完整验证注册、登录、当前用户恢复、退出登录、Google OAuth 入口、GitHub 占位。
 - [ ] 指令：运行前端构建或类型检查。
@@ -165,19 +165,19 @@
 
 ## 3. 第三大步：实现 API mock 层与错误反馈
 
-### Step 3.1：建立 mock 开关
+### Step 3.1：建立 mock 开关 ☑️ 已完成
 
 - [ ] 指令：增加前端 mock 开关，用于在后端未完成时跑通 Home、Create、Play 的开发数据。
 - [ ] 指令：mock 字段必须与 [api-contract.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/api-contract.md) 一致。
 - [ ] 验证：关闭后端时 mock 模式仍能展示 Home、Create、Play；切换到真实 API 模式时请求路径和字段名不需要修改。
 
-### Step 3.2：统一错误弹窗
+### Step 3.2：统一错误弹窗 ☑️ 已完成
 
 - [ ] 指令：为登录失败、注册失败、文件上传失败、任务失败、发布失败、Play 加载失败建立统一错误展示方式。
 - [ ] 指令：错误内容包含标题、失败原因和下一步重试建议。
 - [ ] 验证：模拟每类错误都能看到用户可理解的错误；错误弹窗不会展示 secret、token、password、OAuth code 或完整 presigned URL。
 
-### Step 3.3：统一 DevTools Console 输出
+### Step 3.3：统一 DevTools Console 输出 ☑️ 已完成
 
 - [ ] 指令：建立结构化 Console 输出约定，输出请求摘要、状态、耗时、业务 ID 和错误摘要。
 - [ ] 指令：页面内不新增调试面板。
@@ -185,32 +185,32 @@
 
 ## 4. 第四大步：接入 Home 游戏流
 
-### Step 4.1：接入 published 游戏列表
+### Step 4.1：接入 published 游戏列表 ☑️ 已完成
 
 - [ ] 指令：Home 从 `GET /api/games` 或 mock 获取 published 游戏列表。
 - [ ] 指令：只展示 published 游戏。
 - [ ] 验证：页面加载时会请求游戏列表；draft 游戏不会出现在 Home；至少能展示 3 个游戏。
 
-### Step 4.2：接入 Home 卡片真实字段
+### Step 4.2：接入 Home 卡片真实字段 ☑️ 已完成
 
 - [ ] 指令：卡片展示封面、标题、作者、发布时间、标签、简介、点赞数和游玩次数。
 - [ ] 指令：标签叠在封面左上角；点赞数和游玩次数叠在封面底部；简介只在 hover 显示。
 - [ ] 验证：接口返回字段能完整映射到卡片；缺少封面时有合理兜底；hover 时出现简介；标签点击不会进入 Play。
 
-### Step 4.3：接入排序
+### Step 4.3：接入排序 ☑️ 已完成
 
 - [ ] 指令：支持 `最多游玩`、`最多点赞`、`最新发布` 三种排序。
 - [ ] 指令：切换排序时更新请求参数或 mock 查询条件。
 - [ ] 验证：三种排序切换后列表顺序正确；当前选中排序有明确视觉状态；Console 输出当前排序和返回条数。
 
-### Step 4.4：接入搜索与更多筛选
+### Step 4.4：接入搜索与更多筛选 ☑️ 已完成
 
 - [ ] 指令：搜索框支持按关键词筛选游戏。
 - [ ] 指令：`更多筛选` 展开标签筛选下拉区域。
 - [ ] 指令：标签筛选只改变列表结果，不作为 Play 入口。
 - [ ] 验证：输入关键词后列表变化；选择标签后列表变化；清空筛选后恢复列表；搜索框和更多筛选在视觉顺序上保持为搜索框在左、更多筛选在右。
 
-### Step 4.5：接入点赞
+### Step 4.5：接入点赞 ☑️ 已完成
 
 - [ ] 指令：点赞图标和卡片主体点击区域分离。
 - [ ] 指令：未登录点击点赞弹 Auth Modal，不调用点赞 API。
@@ -219,32 +219,32 @@
 
 ## 5. 第五大步：接入 Play 页面
 
-### Step 5.1：根据游戏 ID 加载 meta
+### Step 5.1：根据游戏 ID 加载 meta ☑️ 已完成
 
 - [ ] 指令：点击 Home 卡片进入 Play，并携带对应 game id。
 - [ ] 指令：Play 根据 game id 请求游戏 meta。
 - [ ] 验证：有效 game id 展示对应游戏详情；无效 game id 显示错误；刷新 Play URL 后仍能加载同一个游戏。
 
-### Step 5.2：加载 manifest
+### Step 5.2：加载 manifest ☑️ 已完成
 
 - [ ] 指令：从 game meta 读取 manifest URL 并加载 manifest。
 - [ ] 指令：manifest 加载失败时显示错误态和重试入口。
 - [ ] 验证：manifest 成功时 Console 输出 manifest URL 和 JSON 摘要；manifest 404 或网络失败时进入错误态；错误态不会白屏。
 
-### Step 5.3：创建 sandboxed iframe
+### Step 5.3：创建 sandboxed iframe ☑️ 已完成
 
 - [ ] 指令：根据 manifest entry 构建 iframe URL。
 - [ ] 指令：iframe 使用 sandbox 限制，只允许脚本运行，不允许访问父页面 DOM。
 - [ ] 验证：iframe src 是远端对象存储或 S3-compatible URL；sandbox 属性符合安全要求；页面不使用本地 React 组件伪装游戏。
 
-### Step 5.4：处理 Play loading、timeout 和重试
+### Step 5.4：处理 Play loading、timeout 和重试 ☑️ 已完成
 
 - [ ] 指令：meta、manifest、iframe ready 分阶段显示 loading。
 - [ ] 指令：任一阶段超时进入 timeout 状态。
 - [ ] 指令：点击重试时重新执行完整加载链路。
 - [ ] 验证：模拟 meta 超时、manifest 超时、iframe 超时都能进入 timeout；重试后重新请求；Console 输出总耗时和阶段耗时。
 
-### Step 5.5：上报 Play 事件
+### Step 5.5：上报 Play 事件 ☑️ 已完成
 
 - [ ] 指令：上报 view、manifest_loaded、started、failed、timeout、exited。
 - [ ] 指令：游客事件允许 user_id 为空。
@@ -359,4 +359,3 @@
 - [ ] 不做 Remix。
 - [ ] 不做 GitHub OAuth 真实跑通。
 - [ ] 不在页面内新增 Printer 或调试面板。
-

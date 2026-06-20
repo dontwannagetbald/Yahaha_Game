@@ -180,7 +180,9 @@ def test_list_detail_and_logs_permissions(client: TestClient, session_factory):
     assert detail.status_code == 200
     assert detail.json()["job_id"] == second_id
     assert logs.status_code == 200
-    assert [log["step"] for log in logs.json()["logs"]] == ["start", "done"]
+    returned_steps = [log["step"] for log in logs.json()["logs"]]
+    assert "start" in returned_steps
+    assert returned_steps[-1] == "done"
     assert "secret" not in str(logs.json())
 
     other_client = TestClient(app)

@@ -97,7 +97,7 @@ def test_like_requires_login(client: TestClient, session_factory):
     assert response.json()["error"]["code"] == "unauthorized"
 
 
-def test_first_like_and_idempotency(client: TestClient, session_factory):
+def test_like_toggles_off_on_second_click(client: TestClient, session_factory):
     game_id, _, _ = seed_game(session_factory)
     login(client, "liker@example.com")
 
@@ -109,14 +109,15 @@ def test_first_like_and_idempotency(client: TestClient, session_factory):
     assert first.json()["like_count"] == 1
     assert first.json()["liked_by_me"] is True
     assert second.status_code == 200
-    assert second.json()["like_count"] == 1
+    assert second.json()["like_count"] == 0
+    assert second.json()["liked_by_me"] is False
 
     async def inspect():
         async with session_factory() as session:
             likes = (await session.execute(select(GameLike))).scalars().all()
             game = await session.get(Game, uuid.UUID(game_id))
-            assert len(likes) == 1
-            assert game.like_count == 1
+            assert len(likes) == 0
+            assert game.like_count == 0
 
     asyncio.run(inspect())
 

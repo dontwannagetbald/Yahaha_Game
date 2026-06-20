@@ -56,6 +56,10 @@ class ObjectStorageService:
         safe_relative_path = self._sanitize_relative_path(relative_path)
         return f"published/{game_id}/{version}/{safe_relative_path}"
 
+    def build_registration_avatar_object_key(self, *, upload_id, filename: str) -> str:
+        safe_filename = self._sanitize_filename(filename)
+        return f"avatars/registrations/{upload_id}/{safe_filename}"
+
     def build_presigned_upload_url(
         self, object_key: str, *, expires_in: int = 900
     ) -> PresignedUrlResult:
@@ -77,13 +81,32 @@ class ObjectStorageService:
         return PresignedUrlResult(url=url, expires_in=expires_in)
 
     def build_public_read_url(self, object_key: str) -> str:
-        if not object_key.startswith("published/"):
+        if not object_key.startswith(("published/", "avatars/")):
             raise StorageConfigurationError(
-                "Public URL is only allowed for published/* object keys"
+                "Public URL is only allowed for published/* or avatars/* object keys"
             )
 
         quoted_key = quote(object_key, safe="/-_.~")
         return f"{self.settings.minio_public_endpoint}/{self.bucket}/{quoted_key}"
+
+    def put_object(
+        self,
+        object_key: str,
+        *,
+        body: bytes,
+        content_type: str,
+    ) -> None:
+        try:
+            self._s3_client.put_object(
+                Bucket=self.bucket,
+                Key=object_key,
+                Body=body,
+                ContentType=content_type,
+            )
+        except BotoCoreError as exc:
+            raise StorageUnavailableError(
+                "Object storage is unavailable"
+            ) from exc
 
     def _sanitize_filename(self, filename: str) -> str:
         name = PurePosixPath(filename).name.strip()

@@ -183,13 +183,19 @@ async def like_game(
             )
         )
     ).scalar_one_or_none()
+    liked_by_me = True
     if existing is None:
         db.add(GameLike(game_id=game.id, user_id=user.user_id))
         game.like_count += 1
-        await db.commit()
+    else:
+        await db.delete(existing)
+        game.like_count = max(0, game.like_count - 1)
+        liked_by_me = False
+
+    await db.commit()
 
     return {
         "game_id": str(game.id),
         "like_count": game.like_count,
-        "liked_by_me": True,
+        "liked_by_me": liked_by_me,
     }

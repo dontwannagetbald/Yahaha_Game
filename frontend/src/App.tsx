@@ -1,485 +1,801 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
-type Page = "home" | "create" | "play";
-type AuthMode = "login" | "register";
-type SortMode = "plays" | "likes" | "latest";
+import {
+  getCurrentUser,
+  loginWithEmail,
+  logout as logoutRequest,
+  registerWithEmail,
+  startGoogleOAuth,
+  type AuthUser,
+} from "./api/auth";
+import { ApiError } from "./api/client";
+import { getGameDetail, likePublishedGame, listPublishedGames } from "./api/games";
+import { AuthModal } from "./components/AuthModal";
+import { patchLikedGame } from "./lib/games";
+import { logConsoleEvent } from "./lib/console";
+import { createUserError, type UserFacingError } from "./lib/errors";
+import {
+  getMockGameDetail,
+  isMockEnabled,
+  likeMockGame,
+  listMockGames,
+  mockAuthStore,
+  mockRuntime,
+} from "./mock/runtime";
+import { CreatePage } from "./pages/CreatePage";
+import { HomePage } from "./pages/HomePage";
+import { PlayPage } from "./pages/PlayPage";
+import type { AuthMode, Game, GameSortParam } from "./types/ui";
+import { TopNav } from "./components/TopNav";
 
-type Game = {
-  id: string;
-  title: string;
-  author: string;
-  publishedAt: string;
-  tag: string;
-  likes: string;
-  plays: string;
-  description: string;
-  cover: string;
-};
-
-const games: Game[] = [
-  {
-    id: "neon-maze",
-    title: "回到那年早读，抱抱当年的自己！再抱抱即将上考场的你们：加油啊！",
-    author: "发癫吧，后浪！",
-    publishedAt: "5月31日",
-    tag: "冒险",
-    likes: "♡ 14.0万",
-    plays: "46:31",
-    description: "穿越霓虹迷宫，收集能量并避开巡逻机器人。",
-    cover:
-      "https://images.unsplash.com/photo-1511512578047-dfb367046420?auto=format&fit=crop&w=1200&q=80",
-  },
-  {
-    id: "sky-runner",
-    title: "Sky Runner",
-    author: "Cloud Studio",
-    publishedAt: "5月31日",
-    tag: "竞速",
-    likes: "♡ 8.2万",
-    plays: "12.4万次",
-    description: "在天空赛道上冲刺，躲避风暴并刷新最快纪录。",
-    cover:
-      "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=1200&q=80",
-  },
-  {
-    id: "pixel-raid",
-    title: "Pixel Raid",
-    author: "Retro Lab",
-    publishedAt: "5月30日",
-    tag: "射击",
-    likes: "♡ 4.9万",
-    plays: "7.8万次",
-    description: "像素地牢射击挑战，清理一波又一波的敌人。",
-    cover:
-      "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=1200&q=80",
-  },
-  {
-    id: "orbital-lab",
-    title: "Orbital Lab",
-    author: "Space Forge",
-    publishedAt: "5月30日",
-    tag: "解谜",
-    likes: "♡ 2.1万",
-    plays: "4.6万次",
-    description: "调整轨道、连接能源节点，修复失控空间站。",
-    cover:
-      "https://images.unsplash.com/photo-1560253023-3ec5d502959f?auto=format&fit=crop&w=1200&q=80",
-  },
-  {
-    id: "coop-quest",
-    title: "Co-op Quest",
-    author: "Team Mode",
-    publishedAt: "5月31日",
-    tag: "合作",
-    likes: "♡ 9.6万",
-    plays: "18.3万次",
-    description: "双人协作解锁机关，找到出口前不能落下队友。",
-    cover:
-      "https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?auto=format&fit=crop&w=1200&q=80",
-  },
-  {
-    id: "arcade-drift",
-    title: "Arcade Drift",
-    author: "Speed Lab",
-    publishedAt: "5月29日",
-    tag: "竞速",
-    likes: "♡ 5.7万",
-    plays: "9.2万次",
-    description: "高速漂移、收集增压道具，在霓虹赛道中冲线。",
-    cover:
-      "https://images.unsplash.com/photo-1600861194942-f883de0dfe96?auto=format&fit=crop&w=1200&q=80",
-  },
-  {
-    id: "mini-builder",
-    title: "Mini Builder",
-    author: "Creator Bot",
-    publishedAt: "5月28日",
-    tag: "创造",
-    likes: "♡ 3.8万",
-    plays: "6.1万次",
-    description: "在小型沙盒里摆放零件，搭出会动的机关地图。",
-    cover:
-      "https://images.unsplash.com/photo-1542751110-97427bbecf20?auto=format&fit=crop&w=1200&q=80",
-  },
-  {
-    id: "boss-rush",
-    title: "Boss Rush",
-    author: "Raid Room",
-    publishedAt: "5月26日",
-    tag: "动作",
-    likes: "♡ 7.4万",
-    plays: "11.8万次",
-    description: "连续挑战 Boss，观察攻击节奏并抓住反击窗口。",
-    cover:
-      "https://images.unsplash.com/photo-1511882150382-421056c89033?auto=format&fit=crop&w=1200&q=80",
-  },
-];
-
-const tasks = [
-  { name: "星际躲避", status: "running", summary: "正在生成游戏面板与素材。" },
-  { name: "森林冒险", status: "succeeded", summary: "draft game ready。" },
-  { name: "像素竞速", status: "pending", summary: "等待执行。" },
-];
+const registerErrorTitle = "注册失败";
+const loginErrorTitle = "登录失败";
+const registerSuccessTitle = "注册成功";
+const loginSuccessTitle = "登录成功";
+const logoutErrorTitle = "退出登录失败";
+const googleErrorTitle = "Google 登录失败";
+const createLoginPromptTitle = "创建游戏需要先登录";
 
 export function App() {
-  const [page, setPage] = useState<Page>("home");
+  const navigate = useNavigate();
+  const location = useLocation();
+  const mockEnabled = isMockEnabled();
+  const tasks = useMemo(() => mockRuntime.tasks, []);
+  const [games, setGames] = useState<Game[]>([]);
+  const [allGames, setAllGames] = useState<Game[]>([]);
+  const [gamesLoading, setGamesLoading] = useState(false);
+  const [gamesError, setGamesError] = useState<UserFacingError | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
-  const [selectedGame, setSelectedGame] = useState(games[0]);
+  const [authEmail, setAuthEmail] = useState("");
+  const [authDisplayName, setAuthDisplayName] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authSubmitting, setAuthSubmitting] = useState(false);
+  const [authRedirectPath, setAuthRedirectPath] = useState<string | null>(null);
+  const [authDialog, setAuthDialog] = useState<UserFacingError | null>(null);
+  const [authSuccessDialog, setAuthSuccessDialog] = useState<UserFacingError | null>(null);
+  const [createLoginPromptOpen, setCreateLoginPromptOpen] = useState(false);
+  const [authBootstrapStatus, setAuthBootstrapStatus] = useState<"loading" | "ready">(
+    "loading",
+  );
+  const githubFeedbackVisible = true;
+  const showTopNav = !location.pathname.startsWith("/play/");
+  const featuredGame = useMemo(() => {
+    let candidate: Game | null = null;
+    let bestScore = -1;
 
-  function openCreate() {
-    if (!isLoggedIn) {
-      setAuthMode("login");
-      setAuthOpen(true);
+    for (const game of allGames) {
+      const score = game.likeCount + game.playCount;
+      if (score > bestScore) {
+        candidate = game;
+        bestScore = score;
+      }
+    }
+
+    return candidate;
+  }, [allGames]);
+
+  useEffect(() => {
+    let active = true;
+
+    void (async () => {
+      if (mockEnabled) {
+        setCurrentUser(mockAuthStore.currentUser);
+        setIsLoggedIn(Boolean(mockAuthStore.currentUser));
+        logConsoleEvent("auth", {
+          requestPath: "/api/auth/me",
+          status: 200,
+          businessStatus: "mock",
+          user_id: mockAuthStore.currentUser?.user_id ?? "guest",
+        });
+        setAuthBootstrapStatus("ready");
+        return;
+      }
+
+      try {
+        const response = await getCurrentUser();
+        if (!active) {
+          return;
+        }
+        setCurrentUser(response.user);
+        setIsLoggedIn(Boolean(response.user));
+        if (response.user) {
+          console.info("[auth] current user restored");
+          logConsoleEvent("auth", {
+            requestPath: "/api/auth/me",
+            status: 200,
+            businessStatus: "restored",
+            user_id: response.user.user_id,
+            nickname: response.user.display_name ?? response.user.email ?? "unknown",
+          });
+        }
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        if (!(error instanceof ApiError) || error.status !== 401) {
+          logConsoleEvent("auth", {
+            requestPath: "/api/auth/me",
+            status: error instanceof ApiError ? error.status : -1,
+            businessStatus: "error",
+            error_code: error instanceof ApiError ? error.code : "unknown_error",
+          });
+        }
+        setCurrentUser(null);
+        setIsLoggedIn(false);
+      } finally {
+        if (active) {
+          setAuthBootstrapStatus("ready");
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [mockEnabled]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get("authError");
+    if (!oauthError) {
       return;
     }
-    setPage("create");
+    const userError = createUserError(
+      loginErrorTitle,
+      new Error(oauthError),
+      "请重新登录或稍后重试。",
+    );
+    setAuthError(userError.message);
+    setAuthDialog(userError);
+    setAuthMode("login");
+    setAuthOpen(true);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }, []);
+
+  useEffect(() => {
+    if (authBootstrapStatus !== "ready") {
+      return;
+    }
+
+    let active = true;
+
+    void (async () => {
+      try {
+        const response = mockEnabled
+          ? listMockGames({ sort: "latest" })
+          : await listPublishedGames({ sort: "latest" });
+
+        if (!active) {
+          return;
+        }
+
+        setAllGames(response.games);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        logConsoleEvent("home", {
+          requestPath: "/api/games",
+          status: error instanceof ApiError ? error.status : 500,
+          businessStatus: "error",
+          error_code: error instanceof ApiError ? error.code : "unknown_error",
+          scope: "featured_catalog",
+        });
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [authBootstrapStatus, isLoggedIn, mockEnabled]);
+
+  function resetAuthForm() {
+    setAuthEmail("");
+    setAuthDisplayName("");
+    setAuthPassword("");
+    setConfirmPassword("");
+    setAuthDialog(null);
+    setAuthSuccessDialog(null);
+    setAuthError(null);
+  }
+
+  function openAuthLoginModal() {
+    setAuthMode("login");
+    setAuthRedirectPath(null);
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthDialog(null);
+    setAuthSuccessDialog(null);
+    setAuthOpen(true);
+  }
+
+  function openCreate() {
+    logConsoleEvent("create", {
+      requestPath: "create-navigation",
+      status: 200,
+      businessStatus: isLoggedIn ? "allowed" : "auth_required",
+    });
+    if (!isLoggedIn) {
+      setAuthRedirectPath("/create");
+      setAuthError(null);
+      setAuthMessage(null);
+      setCreateLoginPromptOpen(true);
+      return;
+    }
+    navigate("/create");
     window.scrollTo({ top: 0 });
   }
 
-  function simulateLogin() {
+  function openCreateLoginModal() {
+    setCreateLoginPromptOpen(false);
+    openAuthLoginModal();
+  }
+
+  function completeAuthenticatedFlow(user: AuthUser, source: "login" | "register") {
+    setCurrentUser(user);
     setIsLoggedIn(true);
     setAuthOpen(false);
-    setPage("home");
+    resetAuthForm();
+    const nextPath = authRedirectPath ?? "/";
+    setAuthRedirectPath(null);
+    setAuthMessage(source === "login" ? "登录成功。" : "注册成功。");
+    setAuthSuccessDialog({
+      title: source === "login" ? loginSuccessTitle : registerSuccessTitle,
+      message: source === "login" ? "当前账号已成功登录。" : "当前账号已成功注册并登录。",
+      retryHint: null,
+      nextStep: "",
+    });
+    navigate(nextPath);
     window.scrollTo({ top: 0 });
   }
 
-  function logout() {
-    setIsLoggedIn(false);
-    setPage("home");
-    window.scrollTo({ top: 0 });
+  function presentAuthFailureDialog(title: string, error: unknown, nextStep: string) {
+    const userError = createUserError(title, error, nextStep);
+    setAuthError(userError.message);
+    setAuthDialog(userError);
+    return userError;
+  }
+
+  async function handleLoadGames({
+    sort,
+    q,
+    tag,
+  }: {
+    sort: GameSortParam;
+    q: string;
+    tag: string;
+  }) {
+    setGamesLoading(true);
+    setGamesError(null);
+
+    try {
+      const response = mockEnabled
+        ? listMockGames({ sort, q, tag })
+        : await listPublishedGames({ sort, q, tag });
+
+      setGames(response.games);
+      logConsoleEvent("home", {
+        requestPath: "/api/games",
+        status: 200,
+        businessStatus: mockEnabled ? "mock_list" : "loaded",
+        sort,
+        tag: tag || "all",
+        query: q || "all",
+        count: response.games.length,
+      });
+    } catch (error) {
+      const userError = createUserError("游戏列表加载失败", error, "请刷新页面或稍后重试。");
+      setGamesError(userError);
+      logConsoleEvent("home", {
+        requestPath: "/api/games",
+        status: error instanceof ApiError ? error.status : 500,
+        businessStatus: "error",
+        error_code: error instanceof ApiError ? error.code : "unknown_error",
+        sort,
+        tag: tag || "all",
+        query: q || "all",
+      });
+    } finally {
+      setGamesLoading(false);
+    }
+  }
+
+  async function handleAuthSubmit() {
+    const email = authEmail.trim().toLowerCase();
+    const displayName = authDisplayName.trim();
+    const password = authPassword;
+
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthDialog(null);
+    setAuthSuccessDialog(null);
+
+    if (!email || !email.includes("@")) {
+      presentAuthFailureDialog(
+        authMode === "login" ? loginErrorTitle : registerErrorTitle,
+        new Error("请输入有效的邮箱地址。"),
+        "请填写正确的邮箱格式后重试。",
+      );
+      return;
+    }
+
+    if (password.length < 8) {
+      presentAuthFailureDialog(
+        authMode === "login" ? loginErrorTitle : registerErrorTitle,
+        new Error("密码至少需要 8 位，且必须同时包含字母和数字。"),
+        "请按密码规则修改后重试。",
+      );
+      return;
+    }
+
+    const hasLetter = /[A-Za-z]/.test(password);
+    const hasDigit = /\d/.test(password);
+    if (!hasLetter || !hasDigit) {
+      presentAuthFailureDialog(
+        authMode === "login" ? loginErrorTitle : registerErrorTitle,
+        new Error("密码至少需要 8 位，且必须同时包含字母和数字。"),
+        "请按密码规则修改后重试。",
+      );
+      return;
+    }
+
+    if (authMode === "register" && password !== confirmPassword) {
+      presentAuthFailureDialog(
+        registerErrorTitle,
+        new Error("两次输入的密码不一致。"),
+        "请确认两次密码保持一致。",
+      );
+      return;
+    }
+
+    if (authMode === "register" && !displayName) {
+      presentAuthFailureDialog(
+        registerErrorTitle,
+        new Error("请输入昵称。"),
+        "请填写昵称后重试。",
+      );
+      return;
+    }
+
+    setAuthSubmitting(true);
+    try {
+      const response = mockEnabled
+        ? {
+            user: {
+              user_id: "mock-user",
+              email,
+              display_name: displayName || email.split("@", 1)[0],
+              avatar_url: null,
+            },
+          }
+        : authMode === "login"
+          ? await loginWithEmail(email, password)
+          : await registerWithEmail({
+              email,
+              password,
+              display_name: displayName,
+              avatar_url: null,
+            });
+      if (!response.user) {
+        throw new Error("Auth response is missing user data.");
+      }
+      if (mockEnabled) {
+        mockAuthStore.currentUser = response.user;
+      }
+      completeAuthenticatedFlow(response.user, authMode);
+      if (authMode === "login") {
+        console.info("[auth] login success");
+      } else {
+        console.info("[auth] register success");
+      }
+      logConsoleEvent("auth", {
+        requestPath: authMode === "login" ? "/api/auth/login" : "/api/auth/register",
+        status: authMode === "login" ? 200 : 201,
+        businessStatus: authMode,
+        user_id: response.user.user_id,
+        nickname: response.user.display_name?.trim() || response.user.email || "unknown",
+      });
+    } catch (error) {
+      const userError = presentAuthFailureDialog(
+        authMode === "login" ? loginErrorTitle : registerErrorTitle,
+        error,
+        "请检查邮箱或密码后重试。",
+      );
+      logConsoleEvent("auth", {
+        requestPath: authMode === "login" ? "/api/auth/login" : "/api/auth/register",
+        status: error instanceof ApiError ? error.status : 500,
+        businessStatus: "error",
+        error_code: error instanceof ApiError ? error.code : "unknown_error",
+        retry_hint: userError.retryHint,
+      });
+    } finally {
+      setAuthSubmitting(false);
+    }
+  }
+
+  async function handleLikeGame(gameId: string) {
+    if (!isLoggedIn) {
+      openAuthLoginModal();
+      logConsoleEvent("home", {
+        requestPath: `/api/games/${gameId}/like`,
+        status: 401,
+        businessStatus: "auth_required",
+      });
+      return;
+    }
+
+    try {
+      const likedGame = mockEnabled ? likeMockGame(gameId) : null;
+      const response = mockEnabled
+        ? {
+            game_id: gameId,
+            like_count: likedGame?.likeCount ?? 0,
+            liked_by_me: Boolean(likedGame?.likedByMe),
+          }
+        : await likePublishedGame(gameId);
+
+      setGames((currentGames) =>
+        currentGames.map((game) =>
+          game.id === gameId
+            ? patchLikedGame(game, response.like_count, response.liked_by_me)
+            : game,
+        ),
+      );
+      setAllGames((currentGames) =>
+        currentGames.map((game) =>
+          game.id === gameId
+            ? patchLikedGame(game, response.like_count, response.liked_by_me)
+            : game,
+        ),
+      );
+      logConsoleEvent("home", {
+        requestPath: `/api/games/${gameId}/like`,
+        status: 200,
+        businessStatus: "liked",
+        game_id: response.game_id,
+        like_count: response.like_count,
+      });
+    } catch (error) {
+      const userError = createUserError("点赞失败", error, "请稍后重试。");
+      setGamesError(userError);
+      logConsoleEvent("home", {
+        requestPath: `/api/games/${gameId}/like`,
+        status: error instanceof ApiError ? error.status : 500,
+        businessStatus: "error",
+        error_code: error instanceof ApiError ? error.code : "unknown_error",
+      });
+    }
+  }
+
+  async function handleLogout() {
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthDialog(null);
+    setAuthSuccessDialog(null);
+    try {
+      if (!mockEnabled) {
+        await logoutRequest();
+      }
+      mockAuthStore.currentUser = null;
+      setCurrentUser(null);
+      setIsLoggedIn(false);
+      setAuthRedirectPath(null);
+      console.info("[auth] logout success");
+      logConsoleEvent("auth", {
+        requestPath: "/api/auth/logout",
+        status: 204,
+        businessStatus: "logged_out",
+      });
+      navigate("/");
+      window.scrollTo({ top: 0 });
+    } catch (error) {
+      presentAuthFailureDialog(logoutErrorTitle, error, "请稍后重试或刷新页面。");
+    }
+  }
+
+  async function handleGoogleLogin() {
+    setAuthError(null);
+    setAuthMessage(null);
+    setAuthDialog(null);
+    setAuthSuccessDialog(null);
+    setAuthSubmitting(true);
+    try {
+      if (mockEnabled) {
+        throw new ApiError(
+          503,
+          "mock_oauth_disabled",
+          "Mock 模式下不触发真实 Google 登录。",
+          "请关闭 mock 后再试。",
+        );
+      }
+      const response = await startGoogleOAuth();
+      console.info("[auth] google oauth start");
+      logConsoleEvent("auth", {
+        requestPath: "/api/auth/oauth/google/start",
+        status: 200,
+        businessStatus: "redirecting",
+        provider: "google",
+      });
+      window.location.assign(response.authorization_url);
+    } catch (error) {
+      const userError = presentAuthFailureDialog(
+        googleErrorTitle,
+        error,
+        "请稍后重试，或先使用邮箱登录。",
+      );
+      logConsoleEvent("auth", {
+        requestPath: "/api/auth/oauth/google/start",
+        status: error instanceof ApiError ? error.status : 500,
+        businessStatus: "error",
+        retry_hint: userError.retryHint,
+      });
+    } finally {
+      setAuthSubmitting(false);
+    }
   }
 
   function openPlay(game: Game) {
-    setSelectedGame(game);
-    setPage("play");
+    logConsoleEvent("play", {
+      requestPath: `/play/${game.id}`,
+      status: 200,
+      businessStatus: "preview",
+      game_id: game.id,
+    });
+    navigate(`/play/${game.id}`);
     window.scrollTo({ top: 0 });
   }
 
   return (
-    <div className="app-shell">
-      <TopNav
-        isLoggedIn={isLoggedIn}
-        currentPage={page}
-        onHome={() => setPage("home")}
-        onCreate={openCreate}
-        onLogin={() => {
-          setAuthMode("login");
-          setAuthOpen(true);
-        }}
-        onLogout={logout}
-      />
-
-      {page === "home" ? <HomePage games={games} onOpenPlay={openPlay} /> : null}
-      {page === "create" ? <CreatePage /> : null}
-      {page === "play" ? (
-        <PlayPage game={selectedGame} onHome={() => setPage("home")} />
+    <div className={showTopNav ? "app-shell" : "play-shell"}>
+      {showTopNav ? (
+        <TopNav
+          isLoggedIn={isLoggedIn}
+          currentUser={currentUser}
+          currentPath={location.pathname}
+          onHome={() => navigate("/")}
+          onCreate={openCreate}
+          onLogin={openAuthLoginModal}
+          onLogout={handleLogout}
+        />
       ) : null}
+
+      {authBootstrapStatus === "loading" ? <div className="sr-only">正在恢复登录状态</div> : null}
+      {authMessage ? <div className="sr-only">{authMessage}</div> : null}
+      {authSuccessDialog ? (
+        <ErrorDialog
+          error={authSuccessDialog}
+          variant="success"
+          onClose={() => setAuthSuccessDialog(null)}
+        />
+      ) : null}
+      {authDialog ? <ErrorDialog error={authDialog} onClose={() => setAuthDialog(null)} /> : null}
+      {gamesError ? <ErrorDialog error={gamesError} onClose={() => setGamesError(null)} /> : null}
+      {createLoginPromptOpen ? (
+        <ErrorDialog
+          error={{
+            title: createLoginPromptTitle,
+            message: "请先登录账号再继续。",
+            retryHint: null,
+            nextStep: "",
+          }}
+          confirmLabel="去登录"
+          onClose={() => setCreateLoginPromptOpen(false)}
+          onConfirm={openCreateLoginModal}
+        />
+      ) : null}
+
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <HomePage
+              featuredGame={featuredGame}
+              games={games}
+              isLoading={gamesLoading}
+              isLoggedIn={isLoggedIn}
+              onLikeGame={handleLikeGame}
+              onLoadGames={handleLoadGames}
+              onOpenPlay={openPlay}
+              onRequireLogin={openAuthLoginModal}
+            />
+          }
+        />
+        <Route path="/create" element={<CreatePage tasks={tasks} />} />
+        <Route
+          path="/play/:gameId"
+          element={
+            <PlayRoute
+              games={allGames}
+              mockEnabled={mockEnabled}
+              onHome={() => navigate("/")}
+              onLikeGame={handleLikeGame}
+              onOpenGame={openPlay}
+              onRequireLogin={openAuthLoginModal}
+            />
+          }
+        />
+      </Routes>
 
       {authOpen ? (
         <AuthModal
           mode={authMode}
           onModeChange={setAuthMode}
-          onClose={() => setAuthOpen(false)}
-          onLogin={simulateLogin}
+          authEmail={authEmail}
+          authPassword={authPassword}
+          confirmPassword={confirmPassword}
+          authError={authError}
+          authMessage={authMessage}
+          authSubmitting={authSubmitting}
+          authDisplayName={authDisplayName}
+          githubFeedbackVisible={githubFeedbackVisible}
+          onEmailChange={setAuthEmail}
+          onDisplayNameChange={setAuthDisplayName}
+          onPasswordChange={setAuthPassword}
+          onConfirmPasswordChange={setConfirmPassword}
+          onClose={() => {
+            setAuthOpen(false);
+            resetAuthForm();
+          }}
+          onSubmit={handleAuthSubmit}
+          onGoogleLogin={handleGoogleLogin}
         />
       ) : null}
     </div>
   );
 }
 
-function TopNav({
-  isLoggedIn,
-  currentPage,
-  onHome,
-  onCreate,
-  onLogin,
-  onLogout,
-}: {
-  isLoggedIn: boolean;
-  currentPage: Page;
-  onHome: () => void;
-  onCreate: () => void;
-  onLogin: () => void;
-  onLogout: () => void;
-}) {
-  return (
-    <nav className="top-nav">
-      <button className="brand-button" onClick={onHome}>
-        Yahaha_Play
-      </button>
-      <div className="nav-actions">
-        <div className="nav-tabs">
-          <button
-            className={currentPage === "home" || currentPage === "play" ? "active" : ""}
-            onClick={onHome}
-          >
-            主页
-          </button>
-          <button className={currentPage === "create" ? "active" : ""} onClick={onCreate}>
-            创建游戏
-          </button>
-        </div>
-        {isLoggedIn ? (
-          <div className="user-area logged-in">
-            <button className="avatar-button" aria-label="Bella Q 用户菜单">
-              <span className="avatar" aria-hidden="true" />
-            </button>
-            <div className="user-menu">
-              <span>Bella Q</span>
-              <button onClick={onLogout}>
-                退出登录
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button className="primary-pill" onClick={onLogin}>
-            登录
-          </button>
-        )}
-      </div>
-    </nav>
-  );
-}
-
-function HomePage({
+function PlayRoute({
   games,
-  onOpenPlay,
+  mockEnabled,
+  onHome,
+  onOpenGame,
+  onLikeGame,
+  onRequireLogin,
 }: {
   games: Game[];
-  onOpenPlay: (game: Game) => void;
+  mockEnabled: boolean;
+  onHome: () => void;
+  onOpenGame: (game: Game) => void;
+  onLikeGame: (gameId: string) => Promise<void>;
+  onRequireLogin: () => void;
 }) {
-  const [sortMode, setSortMode] = useState<SortMode>("plays");
+  const { gameId } = useParams();
+  const [loadedGame, setLoadedGame] = useState<Game | null>(null);
+  const [loadingGame, setLoadingGame] = useState(false);
+  const [gameError, setGameError] = useState<UserFacingError | null>(null);
+  const liveGame = games.find((item) => item.id === gameId) ?? null;
+  const fallbackPreview = liveGame ?? loadedGame;
+  const game =
+    loadedGame && liveGame
+      ? {
+          ...loadedGame,
+          likedByMe: liveGame.likedByMe,
+          likeCount: liveGame.likeCount,
+          likes: liveGame.likes,
+          playCount: liveGame.playCount,
+          plays: liveGame.plays,
+        }
+      : loadedGame ?? liveGame;
+
+  useEffect(() => {
+    if (!gameId) {
+      setLoadedGame(null);
+      setGameError(null);
+      return;
+    }
+
+    let active = true;
+    setLoadingGame(true);
+    setGameError(null);
+
+    void (async () => {
+      try {
+        const nextGame = mockEnabled ? getMockGameDetail(gameId) : await getGameDetail(gameId);
+
+        if (!active) {
+          return;
+        }
+
+        if (!nextGame) {
+          throw new Error("未找到对应游戏。");
+        }
+
+        setLoadedGame(nextGame);
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+        setGameError(createUserError("游戏加载失败", error, "请返回主页后重新进入。"));
+      } finally {
+        if (active) {
+          setLoadingGame(false);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [gameId, mockEnabled]);
+
+  if (gameError) {
+    return (
+      <main className="play-page play-fallback-page">
+        <section className="play-fallback-card" role="alert">
+          <h1>{gameError.title}</h1>
+          <p>{gameError.message}</p>
+          <p>{gameError.retryHint ?? gameError.nextStep}</p>
+          <div className="play-fallback-actions">
+            <button className="primary-pill" onClick={onHome} type="button">
+              返回主页
+            </button>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
+  if (!game || loadingGame) {
+    return (
+      <main className="play-page play-fallback-page">
+        <section className="play-fallback-card">
+          <h1>{fallbackPreview?.title ?? "正在载入游戏"}</h1>
+          <p>正在获取游戏信息，请稍候。</p>
+        </section>
+      </main>
+    );
+  }
 
   return (
-    <main>
-      <header className="home-hero">
-        <h1>Play worlds made by creators.</h1>
-        <p>浏览发布作品、筛选类型、直接进入 Play。未登录用户也可以试玩，创建和发布时再登录。</p>
-      </header>
-
-      <section className="filters" aria-label="游戏筛选">
-        <button
-          className={`filter-tab ${sortMode === "plays" ? "active" : ""}`}
-          onClick={() => setSortMode("plays")}
-        >
-          最多游玩
-        </button>
-        <button
-          className={`filter-tab ${sortMode === "likes" ? "active" : ""}`}
-          onClick={() => setSortMode("likes")}
-        >
-          最多点赞
-        </button>
-        <button
-          className={`filter-tab ${sortMode === "latest" ? "active" : ""}`}
-          onClick={() => setSortMode("latest")}
-        >
-          最新发布
-        </button>
-        <label className="search">
-          <span>⌕</span>
-          <input aria-label="搜索游戏" placeholder="搜索框" />
-        </label>
-        <button className="filter-dropdown">更多筛选</button>
-      </section>
-
-      <section className="catalog-grid" aria-label="游戏列表">
-        {games.map((game) => (
-          <article className="game-card" key={game.id}>
-            <button className="game-card-button" onClick={() => onOpenPlay(game)}>
-              <div
-                className="cover"
-                style={{ backgroundImage: `url("${game.cover}")` }}
-              >
-                <div className="cover-tags">
-                  <span className="tag">{game.tag}</span>
-                </div>
-                <div className="cover-stats">
-                  <span>{game.likes}</span>
-                  <span>{game.plays}</span>
-                </div>
-              </div>
-              <div className="hover-note">{game.description}</div>
-              <div className="card-info">
-                <h2>{game.title}</h2>
-                <p>
-                  @ {game.author} · {game.publishedAt}
-                </p>
-              </div>
-            </button>
-          </article>
-        ))}
-      </section>
-    </main>
+    <PlayPage
+      game={game}
+      games={games.length > 0 ? games : loadedGame ? [loadedGame] : []}
+      onHome={onHome}
+      onLikeGame={onLikeGame}
+      onOpenGame={onOpenGame}
+      onRequireLogin={onRequireLogin}
+    />
   );
 }
 
-function AuthModal({
-  mode,
-  onModeChange,
+function ErrorDialog({
+  error,
+  variant = "error",
+  confirmLabel = "知道了",
   onClose,
-  onLogin,
+  onConfirm,
 }: {
-  mode: AuthMode;
-  onModeChange: (mode: AuthMode) => void;
+  error: UserFacingError;
+  variant?: "error" | "success";
+  confirmLabel?: string;
   onClose: () => void;
-  onLogin: () => void;
+  onConfirm?: () => void;
 }) {
-  const isLogin = mode === "login";
   return (
-    <div className="auth-modal" data-testid="auth-modal" role="dialog" aria-modal="true">
-      <div className="auth-panel">
-        <button className="auth-close" onClick={onClose}>
-          取消
+    <div className="error-dialog-backdrop">
+      <div
+        className={`error-dialog ${variant === "success" ? "success" : "error"}`}
+        role="alertdialog"
+        aria-modal="true"
+      >
+        <button aria-label="关闭提示" className="dialog-close" onClick={onClose} type="button">
+          ×
         </button>
-        <h2>{isLogin ? "登录" : "注册"}</h2>
-        <label className="field">
-          邮箱
-          <input type="email" />
-        </label>
-        <label className="field">
-          密码
-          <input type="password" />
-        </label>
-        {!isLogin ? (
-          <label className="field">
-            确认密码
-            <input type="password" />
-          </label>
-        ) : null}
-        <button className="primary-pill full-width" onClick={onLogin}>
-          {isLogin ? "登录" : "注册"}
+        <h2>{error.title}</h2>
+        <p>{error.message}</p>
+        <p>{error.retryHint ?? error.nextStep}</p>
+        <button className="primary-pill" onClick={onConfirm ?? onClose} type="button">
+          {confirmLabel}
         </button>
-        <div className="oauth-row">
-          <button className="secondary-pill">google</button>
-          <button className="secondary-pill" disabled>
-            github
-          </button>
-        </div>
-        <p className="auth-foot">
-          {isLogin ? "尚无账号？" : "已有账号？"}
-          <button onClick={() => onModeChange(isLogin ? "register" : "login")}>
-            {isLogin ? "注册" : "返回登录"}
-          </button>
-        </p>
       </div>
     </div>
-  );
-}
-
-function CreatePage() {
-  return (
-    <main className="create-layout" data-testid="create-workspace">
-      <aside className="task-sidebar">
-        <div className="sidebar-title">任务列表</div>
-        <div className="task-list">
-          {tasks.map((task) => (
-            <article className="task-item" key={task.name}>
-              <div className="task-head">
-                <strong>{task.name}</strong>
-                <span className={`badge ${task.status}`}>{task.status}</span>
-              </div>
-              <p>{task.summary}</p>
-            </article>
-          ))}
-          <button className="secondary-pill full-width">+ 新建任务</button>
-        </div>
-        <div className="composer">
-          <textarea placeholder="placeholder：创建 agent 给的随机游戏描述建议" />
-          <div className="composer-actions">
-            <button className="icon-button" aria-label="附件">
-              ↥
-            </button>
-            <button className="primary-pill">发送</button>
-          </div>
-        </div>
-      </aside>
-
-      <section className="workspace">
-        <div className="chat-panel">
-          <h1>对话记录</h1>
-          <div className="message agent">您好，今天想创建个什么样的游戏？</div>
-          <div className="message user">试试和 AI 聊聊今天想要创建什么游戏吧～</div>
-          <div className="confirm-card">
-            <h2>最终确认卡片</h2>
-            <ul>
-              <li>游戏类型：策略类</li>
-              <li>核心玩法：射击类关卡挑战</li>
-              <li>成长目标：经营类资源升级</li>
-            </ul>
-          </div>
-        </div>
-
-        <div className="generate-panel">
-          <h1>生成游戏显示面板</h1>
-          <div className="preview-frame">
-            <span>Playable Preview</span>
-          </div>
-          <div className="progress-row">
-            <span>生成过程中</span>
-            <div className="progress-track">
-              <div className="progress-fill" />
-            </div>
-            <span>74%</span>
-          </div>
-          <div className="agent-log">
-            <div>
-              <span>分析创意</span>
-              <span className="badge succeeded">done</span>
-            </div>
-            <div>
-              <span>生成游戏文件</span>
-              <span className="badge running">running</span>
-            </div>
-            <div>
-              <span>上传产物</span>
-              <span className="badge">pending</span>
-            </div>
-          </div>
-          <div className="action-row">
-            <button className="primary-pill">Publish</button>
-            <button className="secondary-pill">Retry</button>
-          </div>
-        </div>
-      </section>
-    </main>
-  );
-}
-
-function PlayPage({ game, onHome }: { game: Game; onHome: () => void }) {
-  return (
-    <main className="play-layout">
-      <aside className="play-sidebar">
-        <button className="back-link" onClick={onHome}>
-          ‹ 返回主页
-        </button>
-        <h1>{game.title}</h1>
-        <p>
-          {game.author} · {game.publishedAt}
-        </p>
-        <div className="stat-row">
-          <span>{game.plays}</span>
-          <span>{game.likes}</span>
-        </div>
-        <div className="tag-row">
-          <span className="tag">{game.tag}</span>
-        </div>
-        <p>{game.description}</p>
-      </aside>
-
-      <section className="play-stage-wrap">
-        <div className="play-stage" data-testid="play-stage">
-          <div className="game-hud">
-            <span>manifest loaded</span>
-            <span>score 1280</span>
-          </div>
-          <div className="orbit" />
-          <div className="player-dot" />
-          <div className="game-title">游戏</div>
-        </div>
-      </section>
-    </main>
   );
 }

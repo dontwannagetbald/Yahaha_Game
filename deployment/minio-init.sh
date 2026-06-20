@@ -23,7 +23,10 @@ cat > /tmp/published-readonly-policy.json <<EOF
         "AWS": ["*"]
       },
       "Action": ["s3:GetObject"],
-      "Resource": ["arn:aws:s3:::${MINIO_BUCKET}/published/*"]
+      "Resource": [
+        "arn:aws:s3:::${MINIO_BUCKET}/published/*",
+        "arn:aws:s3:::${MINIO_BUCKET}/avatars/*"
+      ]
     }
   ]
 }
@@ -31,3 +34,4 @@ EOF
 
 mc anonymous set-json /tmp/published-readonly-policy.json "local/${MINIO_BUCKET}"
 mc anonymous get "local/${MINIO_BUCKET}/published" || true
+mc anonymous get "local/${MINIO_BUCKET}/avatars" || true

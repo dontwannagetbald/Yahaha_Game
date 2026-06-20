@@ -7,18 +7,29 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:static-ui": "node scripts/check-static-ui.mjs"
+    "test:static-ui": "node scripts/check-static-ui.mjs",
+    "test:auth-client": "node scripts/check-auth-client.mjs",
+    "test:current-user": "node scripts/check-current-user.mjs",
+    "test:auth-ui": "node scripts/check-auth-ui.mjs",
+    "test:app-infra": "node scripts/check-app-infra.mjs",
+    "test:routing-structure": "node scripts/check-routing-structure.mjs",
+    "test:home-filters": "node scripts/check-home-filters.mjs",
+    "test:home-api": "node scripts/check-home-api.mjs",
+    "test:play-page": "node scripts/check-play-page.mjs",
+    "test:play-runtime": "node scripts/check-play-runtime.mjs",
+    "test:create-layout": "node scripts/check-create-layout.mjs"
   },
   "dependencies": {
     "antd": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "react-router-dom": "^7.18.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
     "typescript": "latest",
     "vite": "latest"
   }

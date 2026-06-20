@@ -748,7 +748,7 @@
 
 ---
 
-## Step 8：接入 Agent Runner 边界
+## Step 8：接入 Agent Runner 边界 ☑️ 已完成
 
 **目标文件：**
 - 新增：`backend/app/agent_runner.py`
@@ -903,7 +903,7 @@
 
 ---
 
-## Step 10：准备 Seed 游戏数据
+## Step 10：准备 Seed 游戏数据 ☑️ 已完成
 
 **目标文件：**
 - 新增：`backend/app/seed.py`
