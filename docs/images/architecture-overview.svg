@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="920" viewBox="0 0 1680 920" role="img" aria-labelledby="title desc">
+  <title id="title">Yahaha Game MVP Architecture Overview</title>
+  <desc id="desc">Clean architecture overview for Yahaha Game MVP with frontend and backend on the left, agents and data storage on the right.</desc>
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .node { fill: #ffffff; stroke: #222222; stroke-width: 1.5; }
+      .label { fill: #222222; font-family: Arial, sans-serif; font-size: 20px; font-weight: 500; }
+      .small { fill: #5b5b5b; font-family: Arial, sans-serif; font-size: 15px; }
+      .line { fill: none; stroke: #222222; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#222222" />
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1680" height="920" />
+  <text x="40" y="50" class="small">Yahaha Game MVP architecture overview</text>
+
+  <rect class="node" x="690" y="392" width="300" height="96" rx="16" ry="16" />
+  <text x="840" y="430" text-anchor="middle" class="label">Yahaha Game MVP</text>
+  <text x="840" y="460" text-anchor="middle" class="small">Local demo: 5173 / 8000 / 9001</text>
+
+  <rect class="node" x="360" y="150" width="220" height="72" rx="16" ry="16" />
+  <text x="470" y="194" text-anchor="middle" class="label">Frontend</text>
+
+  <rect class="node" x="360" y="560" width="220" height="72" rx="16" ry="16" />
+  <text x="470" y="604" text-anchor="middle" class="label">Backend</text>
+
+  <rect class="node" x="1100" y="150" width="220" height="72" rx="16" ry="16" />
+  <text x="1210" y="194" text-anchor="middle" class="label">Agents</text>
+
+  <rect class="node" x="1070" y="560" width="280" height="72" rx="16" ry="16" />
+  <text x="1210" y="604" text-anchor="middle" class="label">Data &amp; Storage</text>
+
+  <rect class="node" x="80" y="76" width="180" height="60" rx="16" ry="16" />
+  <text x="170" y="113" text-anchor="middle" class="label">Home</text>
+
+  <rect class="node" x="80" y="158" width="180" height="60" rx="16" ry="16" />
+  <text x="170" y="195" text-anchor="middle" class="label">Create</text>
+
+  <rect class="node" x="80" y="240" width="180" height="60" rx="16" ry="16" />
+  <text x="170" y="277" text-anchor="middle" class="label">Play</text>
+
+  <rect class="node" x="80" y="322" width="200" height="60" rx="16" ry="16" />
+  <text x="180" y="359" text-anchor="middle" class="label">Auth Modal</text>
+
+  <rect class="node" x="80" y="404" width="220" height="60" rx="16" ry="16" />
+  <text x="190" y="441" text-anchor="middle" class="label">React + Vite</text>
+
+  <rect class="node" x="80" y="514" width="220" height="60" rx="16" ry="16" />
+  <text x="190" y="551" text-anchor="middle" class="label">Auth / Session</text>
+
+  <rect class="node" x="80" y="596" width="220" height="60" rx="16" ry="16" />
+  <text x="190" y="633" text-anchor="middle" class="label">Games API</text>
+
+  <rect class="node" x="80" y="678" width="220" height="60" rx="16" ry="16" />
+  <text x="190" y="715" text-anchor="middle" class="label">Create Sessions</text>
+
+  <rect class="node" x="80" y="760" width="220" height="60" rx="16" ry="16" />
+  <text x="190" y="797" text-anchor="middle" class="label">Jobs / Uploads / Publish</text>
+
+  <rect class="node" x="1400" y="76" width="220" height="60" rx="16" ry="16" />
+  <text x="1510" y="113" text-anchor="middle" class="label">Conversation Agent</text>
+
+  <rect class="node" x="1400" y="158" width="220" height="60" rx="16" ry="16" />
+  <text x="1510" y="195" text-anchor="middle" class="label">Orchestrator</text>
+
+  <rect class="node" x="1400" y="240" width="220" height="60" rx="16" ry="16" />
+  <text x="1510" y="277" text-anchor="middle" class="label">Asset Agent</text>
+
+  <rect class="node" x="1400" y="322" width="220" height="60" rx="16" ry="16" />
+  <text x="1510" y="359" text-anchor="middle" class="label">Coding / Validator</text>
+
+  <rect class="node" x="1400" y="514" width="220" height="60" rx="16" ry="16" />
+  <text x="1510" y="551" text-anchor="middle" class="label">PostgreSQL</text>
+
+  <rect class="node" x="1400" y="626" width="220" height="60" rx="16" ry="16" />
+  <text x="1510" y="663" text-anchor="middle" class="label">MinIO</text>
+
+  <rect class="node" x="1400" y="738" width="220" height="60" rx="16" ry="16" />
+  <text x="1510" y="775" text-anchor="middle" class="label">Manifest / Bundle / Assets</text>
+
+  <path class="line" d="M 690 416 C 638 330, 610 254, 580 186" />
+  <path class="line" d="M 690 464 C 636 542, 606 576, 580 596" />
+  <path class="line" d="M 990 416 C 1040 330, 1068 254, 1100 186" />
+  <path class="line" d="M 990 464 C 1052 544, 1078 578, 1070 596" />
+
+  <path class="line" d="M 360 176 C 318 130, 292 118, 260 108" />
+  <path class="line" d="M 360 188 C 318 178, 292 188, 260 190" />
+  <path class="line" d="M 360 200 C 318 226, 292 258, 260 272" />
+  <path class="line" d="M 360 212 C 318 282, 292 334, 280 354" />
+  <path class="line" d="M 360 224 C 318 372, 292 416, 300 436" />
+
+  <path class="line" d="M 360 586 C 320 560, 292 552, 300 544" />
+  <path class="line" d="M 360 598 C 318 610, 292 624, 300 626" />
+  <path class="line" d="M 360 610 C 318 666, 292 698, 300 708" />
+  <path class="line" d="M 360 622 C 318 744, 292 780, 300 790" />
+
+  <path class="line" d="M 1320 176 C 1360 130, 1378 118, 1400 108" />
+  <path class="line" d="M 1320 188 C 1360 176, 1378 188, 1400 190" />
+  <path class="line" d="M 1320 200 C 1360 226, 1378 258, 1400 272" />
+  <path class="line" d="M 1320 212 C 1360 282, 1378 334, 1400 354" />
+
+  <path class="line" d="M 1350 586 C 1384 550, 1392 544, 1400 544" />
+  <path class="line" d="M 1350 598 C 1384 636, 1392 650, 1400 656" />
+  <path class="line" d="M 1350 610 C 1384 734, 1392 756, 1400 768" />
+</svg>

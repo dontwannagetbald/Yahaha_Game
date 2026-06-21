@@ -1,0 +1,83 @@
+{
+  "job_context": {
+    "job_id": "job-manual-desktop-assets",
+    "user_id": "user-manual-desktop-assets",
+    "session_id": "session-manual-desktop-assets",
+    "prompt_summary": "使用用户桌面上传的背景图和角色图生成可爱风格小游戏",
+    "version": "v1"
+  },
+  "user_requirements": {
+    "intent_summary": "做一个轻松可爱的躲避收集小游戏，使用用户提供的图片分别作为背景和角色参考",
+    "must_have": ["使用用户背景图", "使用用户角色图", "躲避障碍", "收集道具"],
+    "nice_to_have": ["节奏轻松", "单局时间短"],
+    "constraints": ["儿童友好", "单局 1 分钟以内"],
+    "open_questions": [],
+    "answered_questions": [],
+    "preference_profile": {
+      "genre_candidates": ["arcade", "casual"],
+      "visual_style": "可爱明亮",
+      "tone": "轻松",
+      "target_session_length": "1 分钟",
+      "difficulty": "easy"
+    },
+    "revision_count": 1
+  },
+  "game_plan": {
+    "plan_id": "plan-manual-desktop-assets",
+    "title": "桌面素材冒险",
+    "introduction": "玩家控制用户提供的角色，在用户提供的背景场景中移动，收集闪光道具并避开障碍，坚持到倒计时结束。",
+    "tags": ["arcade", "casual"],
+    "gameplay": "玩家控制角色左右移动，收集道具得分并躲避障碍。",
+    "core_loop": ["观察障碍", "移动躲避", "收集道具", "提升分数"],
+    "style": "参考用户上传背景和角色的整体视觉风格",
+    "characters": [
+      {"role": "player", "description": "参考用户上传 role.jpeg 生成的玩家角色"},
+      {"role": "hazard", "description": "简单障碍物"}
+    ],
+    "win_condition": "倒计时结束时分数达到目标",
+    "lose_condition": "生命值归零",
+    "controls": "方向键或 WASD 移动",
+    "suggestions": [],
+    "confidence": "high"
+  },
+  "material_usage": {
+    "assets": [
+      {
+        "asset_id": "manual-background",
+        "filename": "background.jpg",
+        "mime_type": "image/jpeg",
+        "intended_use": "background_reference",
+        "usage_priority": "must_use",
+        "user_hint": "游戏背景",
+        "agent_note": "用户明确说明该文件对应游戏背景"
+      },
+      {
+        "asset_id": "manual-role",
+        "filename": "role.jpeg",
+        "mime_type": "image/jpeg",
+        "intended_use": "character_reference",
+        "usage_priority": "must_use",
+        "user_hint": "游戏角色",
+        "agent_note": "用户明确说明该文件对应游戏角色"
+      }
+    ]
+  },
+  "uploaded_assets": [
+    {
+      "asset_id": "manual-background",
+      "filename": "background.jpg",
+      "mime_type": "image/jpeg",
+      "size_bytes": 154524,
+      "local_path": "/Users/root1/Desktop/background.jpg",
+      "user_hint": "游戏背景"
+    },
+    {
+      "asset_id": "manual-role",
+      "filename": "role.jpeg",
+      "mime_type": "image/jpeg",
+      "size_bytes": 17654,
+      "local_path": "/Users/root1/Desktop/role.jpeg",
+      "user_hint": "游戏角色"
+    }
+  ]
+}

@@ -1,61 +1,118 @@
-# New LangGraph Project
+# Yahaha LangGraph Agents
 
-[![CI](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/unit-tests.yml)
-[![Integration Tests](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml/badge.svg)](https://github.com/langchain-ai/new-langgraph-project/actions/workflows/integration-tests.yml)
+This package contains the local LangGraph implementation for Yahaha game creation agents.
 
-This template demonstrates a simple application implemented using [LangGraph](https://github.com/langchain-ai/langgraph), designed for showing how to get started with [LangGraph Server](https://langchain-ai.github.io/langgraph/concepts/langgraph_server/#langgraph-server) and using [LangGraph Studio](https://langchain-ai.github.io/langgraph/concepts/langgraph_studio/), a visual debugging IDE.
+Current exported graph:
 
-<div align="center">
-  <img src="./static/studio_ui.png" alt="Graph view in LangGraph studio UI" width="75%" />
-</div>
+- `conversation`: first-stage Create conversation graph.
 
-The core logic defined in `src/agent/graph.py`, showcases an single-step application that responds with a fixed string and the configuration provided.
+The graph is configured in `langgraph.json`:
 
-You can extend this graph to orchestrate more complex agentic workflows that can be visualized and debugged in LangGraph Studio.
-
-## Getting Started
-
-1. Install dependencies, along with the [LangGraph CLI](https://langchain-ai.github.io/langgraph/concepts/langgraph_cli/), which will be used to run the server.
-
-```bash
-cd path/to/your/app
-pip install -e . "langgraph-cli[inmem]"
+```json
+{
+  "graphs": {
+    "conversation": "./src/agent/graph.py:conversation_graph"
+  }
+}
 ```
 
-2. (Optional) Customize the code and project as needed. Create a `.env` file if you need to use secrets.
+## Setup
+
+Use the project virtualenv:
+
+```bash
+cd lan_agents
+.venv/bin/python -m pip install -e .
+```
+
+Create local environment variables if needed:
 
 ```bash
 cp .env.example .env
 ```
 
-If you want to enable LangSmith tracing, add your LangSmith API key to the `.env` file.
+LangSmith tracing uses:
 
 ```text
-# .env
-LANGSMITH_API_KEY=lsv2...
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=...
+LANGSMITH_PROJECT=yahaha-agent-local
 ```
 
-3. Start the LangGraph Server.
+By default, the conversation graph uses `LLM_PROVIDER=mock`, so model API keys are not required for local tests or CI.
 
-```shell
-langgraph dev
+To try an OpenAI-compatible provider for `generate_or_refine_plan`, configure:
+
+```text
+LLM_PROVIDER=openai-compatible
+OPENAI_COMPATIBLE_API_KEY=...
+OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
+OPENAI_COMPATIBLE_MODEL=gpt-5.4-mini
+LLM_TIMEOUT_SECONDS=30
 ```
 
-For more information on getting started with LangGraph Server, [see here](https://langchain-ai.github.io/langgraph/tutorials/langgraph-platform/local-server/).
+The recommended first-stage conversation model is `gpt-5.4-mini`: it is enough for requirement collection, concise suggestions, and structured `game_plan` patches. Keep stronger code-generation models for the later `generation_graph`.
 
-## How to customize
+Only `generate_or_refine_plan` calls the DesignPlanner provider in the current phase. Routing, requirement updates, material usage, card gating, and confirmation checks remain deterministic.
 
-1. **Define runtime context**: Modify the `Context` class in the `graph.py` file to expose the arguments you want to configure per assistant. For example, in a chatbot application you may want to define a dynamic system prompt or LLM to use. For more information on runtime context in LangGraph, [see here](https://langchain-ai.github.io/langgraph/agents/context/?h=context#static-runtime-context).
+`ProviderConfig` reads environment variables from the process first, then from the nearest `.env` in the current directory or its parents. This means both of these work:
 
-2. **Extend the graph**: The core logic of the application is defined in [graph.py](./src/agent/graph.py). You can modify this file to add new nodes, edges, or change the flow of information.
+- Run from the repository root with `.env`.
+- Run from `lan_agents/` with either `lan_agents/.env` or the repository root `.env`.
 
-## Development
+Check the active provider config without printing secrets:
 
-While iterating on your graph in LangGraph Studio, you can edit past state and rerun your app from previous states to debug specific nodes. Local changes will be automatically applied via hot reload.
+```bash
+cd lan_agents
+.venv/bin/python -m agent.providers.preflight
+```
 
-Follow-up requests extend the same thread. You can create an entirely new thread, clearing previous history, using the `+` button in the top right.
+Expected live-provider output should show `"provider": "openai-compatible"` and `"api_key": "SET"`. If it shows `"provider": "mock"`, add `LLM_PROVIDER=openai-compatible` to the repository root `.env` or `lan_agents/.env`.
 
-For more advanced features and examples, refer to the [LangGraph documentation](https://langchain-ai.github.io/langgraph/). These resources can help you adapt this template for your specific use case and build more sophisticated conversational agents.
+For a live multi-turn check, keep passing the returned state into the next run. The first turn may return `conversation_status=collecting` with a follow-up question and short suggestions; once all required `game_plan` fields are filled, the response becomes `ready_to_confirm` and includes a card.
 
-LangGraph Studio also integrates with [LangSmith](https://smith.langchain.com/) for more in-depth tracing and collaboration with teammates, allowing you to analyze and optimize your chatbot's performance.
+## Run Locally
 
+Validate graph config:
+
+```bash
+.venv/bin/langgraph validate
+```
+
+Start LangGraph Server and Studio:
+
+```bash
+.venv/bin/langgraph dev
+```
+
+Open the Studio URL printed by the command. Select the `conversation` graph.
+
+## Fixture Inputs
+
+Fixture files live in `tests/fixtures/` and can be pasted into Studio as graph input:
+
+- `conversation_chat.json`
+- `conversation_upload_assets.json`
+- `conversation_regenerate.json`
+- `conversation_confirm.json`
+- `conversation_invalid.json`
+
+Example API call:
+
+```bash
+curl -s -X POST http://127.0.0.1:2024/runs/wait \
+  -H 'Content-Type: application/json' \
+  -d '{"assistant_id":"conversation","input":{"user_event":{"type":"chat","message":"做一个躲避障碍小游戏"}}}'
+```
+
+If port `2024` is busy, use the port printed by `langgraph dev`.
+
+## Tests
+
+Run all local tests:
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+The test suite covers state schema, node behavior, routing, fixture safety, provider boundaries, DesignPlanner fallback, and conversation graph branches.

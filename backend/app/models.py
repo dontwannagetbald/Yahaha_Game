@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Integer,
@@ -48,6 +49,9 @@ class User(Base):
     )
     games: Mapped[List["Game"]] = relationship(back_populates="owner")
     generation_jobs: Mapped[List["GenerationJob"]] = relationship(
+        back_populates="user"
+    )
+    create_sessions: Mapped[List["CreateSession"]] = relationship(
         back_populates="user"
     )
     uploaded_assets: Mapped[List["UploadedAsset"]] = relationship(
@@ -172,6 +176,20 @@ class GenerationJob(Base):
     )
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
     confirmation: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    create_session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("create_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    parent_job_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("generation_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    revision_intent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_requirements: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    game_plan: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    material_usage: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), default="pending", nullable=False, index=True
     )
@@ -182,6 +200,7 @@ class GenerationJob(Base):
     manifest_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    validation_report: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, nullable=False, index=True
     )
@@ -194,10 +213,89 @@ class GenerationJob(Base):
 
     user: Mapped[User] = relationship(back_populates="generation_jobs")
     game: Mapped[Optional[Game]] = relationship(back_populates="jobs")
+    create_session: Mapped[Optional["CreateSession"]] = relationship(
+        back_populates="generation_jobs"
+    )
+    parent_job: Mapped[Optional["GenerationJob"]] = relationship(
+        remote_side=[id], back_populates="revision_jobs"
+    )
+    revision_jobs: Mapped[List["GenerationJob"]] = relationship(
+        back_populates="parent_job"
+    )
     uploaded_assets: Mapped[List["UploadedAsset"]] = relationship(back_populates="job")
     agent_logs: Mapped[List["AgentLog"]] = relationship(
         back_populates="job", cascade="all, delete-orphan"
     )
+
+
+class CreateSession(Base):
+    __tablename__ = "create_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('collecting', 'ready_to_confirm', 'confirmed', 'error')",
+            name="ck_create_sessions_status",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), default="collecting", nullable=False, index=True
+    )
+    user_requirements: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    game_plan: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    material_usage: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    assistant_response: Mapped[dict] = mapped_column(
+        JSON, default=dict, nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+        index=True,
+    )
+    confirmed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    user: Mapped[User] = relationship(back_populates="create_sessions")
+    generation_jobs: Mapped[List[GenerationJob]] = relationship(
+        back_populates="create_session"
+    )
+    messages: Mapped[List["CreateSessionMessage"]] = relationship(
+        back_populates="create_session", cascade="all, delete-orphan"
+    )
+
+
+class CreateSessionMessage(Base):
+    __tablename__ = "create_session_messages"
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'assistant', 'system')",
+            name="ck_create_session_messages_role",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("create_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False, index=True
+    )
+
+    create_session: Mapped[CreateSession] = relationship(back_populates="messages")
 
 
 class UploadedAsset(Base):
@@ -206,6 +304,9 @@ class UploadedAsset(Base):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    session_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        ForeignKey("create_sessions.id", ondelete="SET NULL"), nullable=True, index=True
     )
     job_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         ForeignKey("generation_jobs.id", ondelete="SET NULL"), nullable=True, index=True
@@ -220,6 +321,7 @@ class UploadedAsset(Base):
     )
 
     user: Mapped[User] = relationship(back_populates="uploaded_assets")
+    create_session: Mapped[Optional[CreateSession]] = relationship()
     job: Mapped[Optional[GenerationJob]] = relationship(back_populates="uploaded_assets")
 
 

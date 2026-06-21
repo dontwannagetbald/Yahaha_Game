@@ -4,6 +4,18 @@ export type ApiErrorBody = {
     message?: string;
     retry_hint?: string | null;
   };
+  detail?:
+    | string
+    | Array<{
+        type?: string;
+        loc?: Array<string | number>;
+        msg?: string;
+      }>
+    | {
+        code?: string;
+        message?: string;
+        retry_hint?: string | null;
+      };
 };
 
 export class ApiError extends Error {
@@ -20,10 +32,53 @@ export class ApiError extends Error {
   }
 }
 
-const apiBaseUrl = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+const apiBaseUrl = rawApiBaseUrl.replace(/\/$/, "");
+
+function normalizeErrorDetail(body: ApiErrorBody | null): {
+  code?: string;
+  message?: string;
+  retryHint: string | null;
+} {
+  if (!body?.detail) {
+    return { retryHint: null };
+  }
+
+  if (typeof body.detail === "string") {
+    return { message: body.detail, retryHint: null };
+  }
+
+  if (Array.isArray(body.detail)) {
+    const firstDetail = body.detail[0];
+    const detailMessage =
+      typeof firstDetail?.msg === "string" && firstDetail.msg.trim().length > 0
+        ? firstDetail.msg
+        : null;
+
+    if (!detailMessage) {
+      return { retryHint: null };
+    }
+
+    return {
+      code: "validation_error",
+      message: detailMessage,
+      retryHint: null,
+    };
+  }
+
+  return {
+    code: body.detail.code,
+    message: body.detail.message,
+    retryHint: body.detail.retry_hint ?? null,
+  };
+}
 
 function buildApiUrl(path: string): string {
-  return `${apiBaseUrl}${path.startsWith("/") ? path : `/${path}`}`;
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  if (!apiBaseUrl) {
+    return normalizedPath;
+  }
+  return `${apiBaseUrl}${normalizedPath}`;
 }
 
 export async function parseApiError(response: Response): Promise<ApiError> {
@@ -34,9 +89,10 @@ export async function parseApiError(response: Response): Promise<ApiError> {
     body = null;
   }
 
-  const code = body?.error?.code ?? `http_${response.status}`;
-  const message = body?.error?.message ?? response.statusText ?? "Request failed";
-  const retryHint = body?.error?.retry_hint ?? null;
+  const detail = normalizeErrorDetail(body);
+  const code = body?.error?.code ?? detail.code ?? `http_${response.status}`;
+  const message = body?.error?.message ?? detail.message ?? response.statusText ?? "Request failed";
+  const retryHint = body?.error?.retry_hint ?? detail.retryHint;
   return new ApiError(response.status, code, message, retryHint);
 }
 

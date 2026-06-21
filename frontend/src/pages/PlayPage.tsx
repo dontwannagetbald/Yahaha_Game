@@ -68,6 +68,10 @@ export function PlayPage({
     let metaTimer = 0;
     let manifestTimer = 0;
     let timeoutTimer = 0;
+    const clearStageTimers = () => {
+      window.clearTimeout(metaTimer);
+      window.clearTimeout(manifestTimer);
+    };
 
     startedEventRef.current = false;
     exitPostedRef.current = false;
@@ -85,7 +89,7 @@ export function PlayPage({
 
       setPlayState("timeout");
       setManifestError("当前游戏加载超时，请重新加载后再试。");
-      setLoadProgress(100);
+      setLoadProgress((current) => Math.max(current, 100));
       void createPlayEvent(game.id, "timeout", {
         stage: playState,
         elapsed_ms: Math.round(performance.now() - loadStartedAtRef.current),
@@ -118,7 +122,7 @@ export function PlayPage({
           return;
         }
         setPlayState("loading_manifest");
-        setLoadProgress(28);
+        setLoadProgress((current) => Math.max(current, 28));
       }, 140);
 
       try {
@@ -136,7 +140,7 @@ export function PlayPage({
             return;
           }
           setRuntimeManifest(manifest);
-          setLoadProgress(64);
+          setLoadProgress((current) => Math.max(current, 64));
           setPlayState("loading_iframe");
         }, 120);
 
@@ -146,9 +150,10 @@ export function PlayPage({
           game.manifestUrl,
         );
 
+        clearStageTimers();
         setRuntimeManifest(manifest);
         setIframeSrc(nextIframeSrc);
-        setLoadProgress(82);
+        setLoadProgress((current) => Math.max(current, 82));
         setPlayState("loading_iframe");
 
         await createPlayEvent(game.id, "manifest_loaded", {
@@ -207,8 +212,7 @@ export function PlayPage({
     return () => {
       active = false;
       abortController.abort();
-      window.clearTimeout(metaTimer);
-      window.clearTimeout(manifestTimer);
+      clearStageTimers();
       window.clearTimeout(timeoutTimer);
 
       if (!exitPostedRef.current) {
@@ -335,7 +339,7 @@ export function PlayPage({
               onLoad={() => {
                 startedEventRef.current = true;
                 setPlayState("ready");
-                setLoadProgress(100);
+                setLoadProgress((current) => Math.max(current, 100));
                 void createPlayEvent(game.id, "started", {
                   entry_url: iframeSrc,
                   elapsed_ms: Math.round(performance.now() - loadStartedAtRef.current),

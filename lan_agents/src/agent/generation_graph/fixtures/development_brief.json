@@ -1,0 +1,42 @@
+{
+  "job_context": {
+    "job_id": "job-step5-fixture",
+    "user_id": "user-step5-fixture",
+    "session_id": "session-step5-fixture",
+    "prompt_summary": "做一个可爱风格的躲避收集小游戏",
+    "version": "v1"
+  },
+  "game_plan": {
+    "title": "星星小猫冒险",
+    "introduction": "帮助小猫在森林里收集星星，避开滚石和树桩，坚持到倒计时结束。",
+    "controls": "方向键或 WASD 移动"
+  },
+  "development_brief": {
+    "title": "星星小猫冒险",
+    "gameplay_goal": "玩家控制小猫左右移动，收集星星得分并躲避障碍。",
+    "core_loop": ["观察障碍", "移动躲避", "收集星星", "提升分数"],
+    "scene_layout": "可爱卡通森林",
+    "entities": ["player", "hazard", "star"],
+    "controls": "方向键或 WASD 移动",
+    "win_condition": "倒计时结束时分数达到目标",
+    "lose_condition": "生命值归零",
+    "ui_hud": ["score", "timer", "status"],
+    "allowed_asset_paths": ["assets/player.png"],
+    "technical_constraints": ["static-html5-only", "iframe-sandbox-allow-scripts"]
+  },
+  "asset_manifest_plan": [
+    {
+      "asset_id": "asset-cat-image",
+      "target_path": "assets/player.png",
+      "kind": "image",
+      "required": true,
+      "source": "uploaded"
+    }
+  ],
+  "game_spec": {
+    "archetype": "top_down",
+    "runtime": "html5-iframe",
+    "title": "星星小猫冒险"
+  },
+  "artifact_workspace": "output/coding-demo"
+}

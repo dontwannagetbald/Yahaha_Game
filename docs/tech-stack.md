@@ -17,7 +17,8 @@
 
 - 前端通过 HTTP 调用 FastAPI，并根据服务端会话状态渲染受保护页面。
 - 后端负责认证、DB-backed session、数据库写入、对象存储签名/上传、生成任务生命周期和已发布游戏元数据。
-- Create 请求会先创建持久化的 `generation_job` 记录，再通过 `BackgroundTasks` 运行生成流程；Agent 内部设计后续再定。
+- Create 请求会先创建持久化的 `create_session`，由 Design Agent 收敛方案；用户确认后再基于 confirmed session 创建 `generation_job`，并通过 `BackgroundTasks` 运行生成流程。
+- 生成后聊天修改进入 revision loop，创建新的 revision job 重新生成一版 draft，不覆盖旧产物。
 - 生成结果会被打包为静态 Web 资产，并上传到 MinIO 的稳定对象路径下。
 - Play 页面先从后端获取游戏 meta，再从 MinIO 加载对应的 `manifest.json`，最后通过 sandboxed iframe 运行生成的游戏 bundle。
 - PostgreSQL 是发布状态、作者、标签、对象路径、manifest URL 和任务进度的事实来源。

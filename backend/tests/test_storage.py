@@ -90,8 +90,8 @@ def test_private_prefixes_return_presigned_urls_without_full_signature_assertion
 
     assert draft_result.expires_in == 900
     assert upload_result.expires_in == 900
-    assert draft_result.url.startswith("http://minio:9000/yahaha-game/")
-    assert upload_result.url.startswith("http://minio:9000/yahaha-game/")
+    assert draft_result.url.startswith("http://localhost:9000/yahaha-game/")
+    assert upload_result.url.startswith("http://localhost:9000/yahaha-game/")
     assert "X-Amz-Signature=" in draft_result.url
     assert "X-Amz-Signature=" in upload_result.url
 
@@ -129,7 +129,7 @@ def test_presigned_url_wraps_storage_client_failures(monkeypatch):
         raise BotoCoreError()
 
     monkeypatch.setattr(
-        service._s3_client,
+        service._presign_client,
         "generate_presigned_url",
         broken_generate_presigned_url,
     )

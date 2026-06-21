@@ -1,0 +1,1 @@
+const canvas = document.getElementById('game'); const ctx = canvas.getContext('2d'); canvas.width = 960; canvas.height = 540; ctx.fillStyle = '#101418'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = '#ffc200'; ctx.font = '28px sans-serif'; ctx.fillText('Debug Demo Ready', 24, 40); window.parent.postMessage({ type: 'game_ready' }, '*');

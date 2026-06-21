@@ -47,11 +47,13 @@ class Settings(BaseSettings):
     github_redirect_uri: str = "http://localhost:8000/api/auth/oauth/github/callback"
 
     model_provider: str = "mock"
+    agent_runner: str = "fake"
     mock_provider_enabled: bool = True
     openai_compatible_base_url: str = "https://api.example.com/v1"
     openai_compatible_api_key: str = ""
     openai_compatible_model: str = "example-model"
     openai_compatible_timeout_seconds: int = 120
+    lan_agents_src_path: str = str(REPO_ROOT / "lan_agents" / "src")
 
     @property
     def cors_allowed_origins(self) -> list[str]:
@@ -82,6 +84,10 @@ def validate_required_settings(current_settings: Settings) -> None:
         missing.append("DATABASE_URL")
 
     provider = current_settings.model_provider.lower()
+    runner = current_settings.agent_runner.lower()
+    if runner not in {"fake", "langgraph"}:
+        raise ConfigurationError("AGENT_RUNNER must be either 'fake' or 'langgraph'")
+
     if provider == "openai-compatible":
         if not current_settings.openai_compatible_api_key:
             missing.append("OPENAI_COMPATIBLE_API_KEY")

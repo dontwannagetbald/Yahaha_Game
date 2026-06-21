@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db import get_session as app_get_session
 from app.main import app
-from app.models import AgentLog, Base, GenerationJob, UploadedAsset, User
+from app.models import AgentLog, Base, CreateSession, Game, GenerationJob, UploadedAsset, User
 
 
 @pytest_asyncio.fixture()
@@ -67,6 +67,74 @@ def create_asset(client: TestClient) -> str:
     return complete.json()["asset_id"]
 
 
+def create_confirmed_session(
+    client: TestClient,
+    session_factory,
+    *,
+    initial_message: str = "做一个猫咪跑酷游戏",
+    asset_ids: list[str] | None = None,
+    status: str = "confirmed",
+) -> str:
+    create_session_id = uuid.uuid4()
+
+    async def seed_session() -> None:
+        async with session_factory() as session:
+            owner = (
+                await session.execute(select(User).where(User.email == "owner@example.com"))
+            ).scalar_one()
+            create_session = CreateSession(
+                id=create_session_id,
+                user_id=owner.user_id,
+                status=status,
+                user_requirements={
+                    "intent_summary": initial_message,
+                    "must_have": ["跑酷", "收集"],
+                    "constraints": [],
+                },
+                game_plan={
+                    "plan_id": "test-plan",
+                    "title": "猫咪跑酷",
+                    "introduction": "收集鱼干并躲避障碍。",
+                    "tags": ["runner"],
+                    "gameplay": "跑酷收集",
+                    "controls": "方向键移动",
+                },
+                material_usage={
+                    "assets": [
+                        {
+                            "asset_id": asset_id,
+                            "filename": "asset.png",
+                            "mime_type": "image/png",
+                            "size_bytes": 1024,
+                            "object_key": "uploads/test/asset.png",
+                            "user_hint": "",
+                        }
+                        for asset_id in (asset_ids or [])
+                    ]
+                },
+                assistant_response={
+                    "message": "方案已确认。",
+                    "suggestions": [],
+                    "card": {
+                        "plan_id": "test-plan",
+                        "title": "猫咪跑酷",
+                        "introduction": "收集鱼干并躲避障碍。",
+                        "tags": ["runner"],
+                    },
+                    "actions": ["generate"],
+                },
+                confirmed_at=datetime.now(timezone.utc) if status == "confirmed" else None,
+            )
+            session.add(create_session)
+            for asset_id in asset_ids or []:
+                asset = await session.get(UploadedAsset, uuid.UUID(asset_id))
+                asset.session_id = create_session_id
+            await session.commit()
+
+    asyncio.run(seed_session())
+    return str(create_session_id)
+
+
 def test_create_requires_login(client: TestClient):
     response = client.post(
         "/api/jobs",
@@ -77,72 +145,116 @@ def test_create_requires_login(client: TestClient):
     assert response.json()["error"]["code"] == "unauthorized"
 
 
-def test_create_success_and_asset_rules(client: TestClient, session_factory):
+def test_create_job_from_confirmed_session_snapshots_plan_and_assets(
+    client: TestClient, session_factory
+):
     login(client, "owner@example.com")
     asset_id = create_asset(client)
-
-    created = client.post(
-        "/api/jobs",
-        json={
-            "prompt": "make game",
-            "asset_ids": [asset_id],
-            "confirmation": {"title": "My Game", "tags": ["runner"]},
-        },
+    session_id = create_confirmed_session(
+        client,
+        session_factory,
+        initial_message="做一个猫咪跑酷游戏",
+        asset_ids=[asset_id],
     )
+
+    created = client.post("/api/jobs", json={"session_id": session_id})
 
     assert created.status_code == 201
-    assert created.json()["status"] == "pending"
-    assert created.json()["job_id"]
-    assert created.json()["created_at"]
+    body = created.json()
+    assert body["job_id"]
+    assert body["session_id"] == session_id
+    assert body["status"] == "pending"
 
-    too_many = client.post(
-        "/api/jobs",
-        json={
-            "prompt": "too many",
-            "asset_ids": [asset_id] * 6,
-            "confirmation": {"title": "Overflow"},
-        },
-    )
-    assert too_many.status_code == 400
-
-    other_client = TestClient(app)
-    try:
-        app.dependency_overrides[app_get_session] = app.dependency_overrides[
-            app_get_session
-        ]
-        login(other_client, "other@example.com")
-        forbidden = other_client.post(
-            "/api/jobs",
-            json={
-                "prompt": "steal",
-                "asset_ids": [asset_id],
-                "confirmation": {"title": "Steal"},
-            },
-        )
-        assert forbidden.status_code == 403
-    finally:
-        other_client.close()
-
-    async def inspect():
+    async def inspect() -> None:
         async with session_factory() as session:
-            jobs = (await session.execute(select(GenerationJob))).scalars().all()
-            assets = (await session.execute(select(UploadedAsset))).scalars().all()
-            assert len(jobs) == 1
-            assert assets[0].job_id == jobs[0].id
+            job = (
+                await session.execute(select(GenerationJob))
+            ).scalar_one()
+            asset = await session.get(UploadedAsset, uuid.UUID(asset_id))
+            create_session = await session.get(CreateSession, uuid.UUID(session_id))
+            assert job.create_session_id == create_session.id
+            assert job.prompt == create_session.user_requirements["intent_summary"]
+            assert job.user_requirements == create_session.user_requirements
+            assert job.game_plan == create_session.game_plan
+            assert job.material_usage == create_session.material_usage
+            assert asset.session_id == create_session.id
+            assert asset.job_id == job.id
 
     asyncio.run(inspect())
 
 
+def test_create_job_requires_owned_confirmed_session_and_allows_rerun(
+    client: TestClient, session_factory
+):
+    login(client, "owner@example.com")
+    unconfirmed_session_id = create_confirmed_session(
+        client,
+        session_factory,
+        initial_message="还没确认的游戏",
+        status="ready_to_confirm",
+    )
+
+    not_confirmed = client.post(
+        "/api/jobs",
+        json={"session_id": unconfirmed_session_id},
+    )
+    assert not_confirmed.status_code == 400
+
+    confirmed_session_id = create_confirmed_session(client, session_factory)
+    first = client.post("/api/jobs", json={"session_id": confirmed_session_id})
+    rerun = client.post("/api/jobs", json={"session_id": confirmed_session_id})
+    assert first.status_code == 201
+    assert rerun.status_code == 201
+    assert rerun.json()["job_id"] != first.json()["job_id"]
+
+    async def inspect() -> None:
+        async with session_factory() as session:
+            jobs = (
+                await session.execute(
+                    select(GenerationJob).order_by(GenerationJob.created_at.asc())
+                )
+            ).scalars().all()
+            assert len(jobs) == 2
+            assert all(str(job.create_session_id) == confirmed_session_id for job in jobs)
+
+    asyncio.run(inspect())
+
+    client.post("/api/auth/logout")
+    login(client, "other@example.com")
+    forbidden = client.post("/api/jobs", json={"session_id": confirmed_session_id})
+    assert forbidden.status_code in {403, 404}
+
+
+def test_create_rejects_session_asset_limit(client: TestClient, session_factory):
+    login(client, "owner@example.com")
+    asset_id = create_asset(client)
+    session_id = create_confirmed_session(
+        client,
+        session_factory,
+        asset_ids=[asset_id] * 6,
+    )
+
+    too_many = client.post(
+        "/api/jobs",
+        json={"session_id": session_id},
+    )
+    assert too_many.status_code == 400
+
+
 def test_list_detail_and_logs_permissions(client: TestClient, session_factory):
     login(client, "owner@example.com")
-    first = client.post(
-        "/api/jobs",
-        json={"prompt": "first", "asset_ids": [], "confirmation": {"title": "First"}},
+    first_session_id = create_confirmed_session(
+        client,
+        session_factory,
+        initial_message="first",
     )
-    second = client.post(
-        "/api/jobs",
-        json={"prompt": "second", "asset_ids": [], "confirmation": {"title": "Second"}},
+    second_session_id = create_confirmed_session(
+        client,
+        session_factory,
+        initial_message="second",
     )
+    first = client.post("/api/jobs", json={"session_id": first_session_id})
+    second = client.post("/api/jobs", json={"session_id": second_session_id})
     first_id = first.json()["job_id"]
     second_id = second.json()["job_id"]
 
@@ -177,8 +289,14 @@ def test_list_detail_and_logs_permissions(client: TestClient, session_factory):
 
     assert listed.status_code == 200
     assert [job["job_id"] for job in listed.json()["jobs"]] == [second_id, first_id]
+    assert [job["session_id"] for job in listed.json()["jobs"]] == [
+        second_session_id,
+        first_session_id,
+    ]
     assert detail.status_code == 200
     assert detail.json()["job_id"] == second_id
+    assert detail.json()["session_id"] == second_session_id
+    assert detail.json()["parent_job_id"] is None
     assert logs.status_code == 200
     returned_steps = [log["step"] for log in logs.json()["logs"]]
     assert "start" in returned_steps
@@ -195,3 +313,115 @@ def test_list_detail_and_logs_permissions(client: TestClient, session_factory):
         assert other_client.get(f"/api/jobs/{second_id}/logs").status_code == 404
     finally:
         other_client.close()
+
+
+def test_revision_job_rejects_pending_or_running_source_job(
+    client: TestClient, session_factory
+):
+    login(client, "owner@example.com")
+    session_id = create_confirmed_session(client, session_factory)
+    pending_job_id = uuid.uuid4()
+    running_job_id = uuid.uuid4()
+
+    async def seed_jobs() -> None:
+        async with session_factory() as session:
+            owner = (
+                await session.execute(select(User).where(User.email == "owner@example.com"))
+            ).scalar_one()
+            create_session = await session.get(CreateSession, uuid.UUID(session_id))
+            for job_id, status in [
+                (pending_job_id, "pending"),
+                (running_job_id, "running"),
+            ]:
+                session.add(
+                    GenerationJob(
+                        id=job_id,
+                        user_id=owner.user_id,
+                        prompt="做一个猫咪跑酷游戏",
+                        confirmation={"title": "猫咪跑酷"},
+                        create_session_id=create_session.id,
+                        user_requirements=create_session.user_requirements,
+                        game_plan=create_session.game_plan,
+                        material_usage=create_session.material_usage,
+                        status=status,
+                        created_at=datetime.now(timezone.utc),
+                    )
+                )
+            await session.commit()
+
+    asyncio.run(seed_jobs())
+
+    pending_revision = client.post(
+        f"/api/jobs/{pending_job_id}/revisions",
+        json={"message": "把障碍物速度降低一点"},
+    )
+    running_revision = client.post(
+        f"/api/jobs/{running_job_id}/revisions",
+        json={"message": "把障碍物速度降低一点"},
+    )
+
+    assert pending_revision.status_code == 409
+    assert running_revision.status_code == 409
+
+
+def test_revision_job_copies_snapshots_without_overwriting_source(
+    client: TestClient, session_factory
+):
+    login(client, "owner@example.com")
+    session_id = create_confirmed_session(client, session_factory)
+    created = client.post("/api/jobs", json={"session_id": session_id})
+    source_job_id = created.json()["job_id"]
+    source_game_id = uuid.uuid4()
+
+    async def mark_succeeded() -> None:
+        async with session_factory() as session:
+            job = await session.get(GenerationJob, uuid.UUID(source_job_id))
+            game = Game(
+                id=source_game_id,
+                owner_id=job.user_id,
+                title="猫咪跑酷旧版",
+                description="旧版 draft",
+                cover_url="http://localhost:9000/yahaha-game/drafts/old/cover.png",
+                tags=["runner"],
+                status="draft",
+                manifest_url="http://localhost:9000/yahaha-game/drafts/old/manifest.json",
+                artifact_base_url="http://localhost:9000/yahaha-game/drafts/old/",
+            )
+            session.add(game)
+            await session.flush()
+            job.status = "succeeded"
+            job.game_id = game.id
+            job.artifact_prefix = "drafts/old"
+            job.manifest_url = game.manifest_url
+            await session.commit()
+
+    asyncio.run(mark_succeeded())
+
+    revision = client.post(
+        f"/api/jobs/{source_job_id}/revisions",
+        json={"message": "把难度降低一点，增加回血道具"},
+    )
+
+    assert revision.status_code == 201
+    body = revision.json()
+    assert body["job_id"] != source_job_id
+    assert body["session_id"] == session_id
+    assert body["parent_job_id"] == source_job_id
+    assert body["status"] == "pending"
+
+    async def inspect() -> None:
+        async with session_factory() as session:
+            source = await session.get(GenerationJob, uuid.UUID(source_job_id))
+            source_game = await session.get(Game, source_game_id)
+            child = await session.get(GenerationJob, uuid.UUID(body["job_id"]))
+            assert source.status == "succeeded"
+            assert source.game_id == source_game_id
+            assert source_game.title == "猫咪跑酷旧版"
+            assert child.parent_job_id == source.id
+            assert child.create_session_id == source.create_session_id
+            assert child.revision_intent == "把难度降低一点，增加回血道具"
+            assert child.user_requirements == source.user_requirements
+            assert child.game_plan == source.game_plan
+            assert child.material_usage == source.material_usage
+
+    asyncio.run(inspect())

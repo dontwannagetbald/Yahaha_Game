@@ -26,6 +26,13 @@ const playPageTokens = [
   "\"timeout\"",
   "\"exited\"",
   "重新加载",
+  "const clearStageTimers = () => {",
+  "window.clearTimeout(metaTimer);",
+  "window.clearTimeout(manifestTimer);",
+  "setLoadProgress((current) => Math.max(current, 28));",
+  "setLoadProgress((current) => Math.max(current, 64));",
+  "setLoadProgress((current) => Math.max(current, 82));",
+  "setLoadProgress((current) => Math.max(current, 100));",
 ];
 
 const appTokens = [

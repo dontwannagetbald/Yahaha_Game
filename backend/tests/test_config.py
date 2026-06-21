@@ -63,8 +63,21 @@ def test_env_example_covers_validated_settings():
     for variable in [
         "DATABASE_URL",
         "MODEL_PROVIDER",
+        "AGENT_RUNNER",
         "OPENAI_COMPATIBLE_API_KEY",
         "OPENAI_COMPATIBLE_BASE_URL",
         "OPENAI_COMPATIBLE_MODEL",
+        "LLM_PROVIDER",
+        "LAN_AGENTS_SRC_PATH",
+        "LANGSMITH_TRACING",
+        "LANGSMITH_API_KEY",
+        "LANGSMITH_PROJECT",
+        "LANGSMITH_ENDPOINT",
     ]:
         assert f"{variable}=" in env_example
+
+
+def test_backend_dockerfile_installs_node_for_agent_runtime_validation():
+    dockerfile = (REPO_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "nodejs" in dockerfile

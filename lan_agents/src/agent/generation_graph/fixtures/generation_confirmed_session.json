@@ -1,0 +1,121 @@
+{
+  "job_context": {
+    "job_id": "job-step2-fixture",
+    "user_id": "user-step2-fixture",
+    "session_id": "session-step2-fixture",
+    "prompt_summary": "做一个可爱风格的躲避收集小游戏",
+    "version": "v1"
+  },
+  "user_requirements": {
+    "intent_summary": "可爱卡通风格的躲避障碍和收集星星小游戏",
+    "must_have": ["小猫主角", "躲避障碍", "收集星星"],
+    "nice_to_have": ["森林背景", "轻松音效"],
+    "constraints": ["儿童友好", "单局 1 分钟以内"],
+    "open_questions": [],
+    "answered_questions": [],
+    "preference_profile": {
+      "genre_candidates": ["arcade", "casual"],
+      "visual_style": "可爱卡通",
+      "tone": "轻松",
+      "target_session_length": "1 分钟",
+      "difficulty": "easy"
+    },
+    "revision_count": 3
+  },
+  "game_plan": {
+    "plan_id": "plan-step2-fixture",
+    "title": "星星小猫冒险",
+    "introduction": "帮助小猫在森林里收集星星，避开滚石和树桩，坚持到倒计时结束。",
+    "tags": ["arcade", "casual"],
+    "gameplay": "玩家控制小猫左右移动，收集星星得分并躲避障碍。",
+    "core_loop": ["观察障碍", "移动躲避", "收集星星", "提升分数"],
+    "style": "可爱卡通森林",
+    "characters": [
+      {"role": "player", "description": "圆滚滚的小猫"},
+      {"role": "hazard", "description": "滚石和树桩"}
+    ],
+    "win_condition": "倒计时结束时分数达到目标",
+    "lose_condition": "生命值归零",
+    "controls": "方向键或 WASD 移动",
+    "suggestions": [],
+    "confidence": "high"
+  },
+  "material_usage": {
+    "assets": [
+      {
+        "asset_id": "asset-cat-image",
+        "filename": "cat.png",
+        "mime_type": "image/png",
+        "intended_use": "character_reference",
+        "usage_priority": "must_use",
+        "user_hint": "主角小猫",
+        "agent_note": "用于小猫主角外观参考"
+      },
+      {
+        "asset_id": "asset-forest-video",
+        "filename": "forest.mp4",
+        "mime_type": "video/mp4",
+        "intended_use": "background_reference",
+        "usage_priority": "reference_only",
+        "user_hint": "森林氛围",
+        "agent_note": "用于抽取背景关键帧或总结场景风格"
+      },
+      {
+        "asset_id": "asset-pop-audio",
+        "filename": "pop.wav",
+        "mime_type": "audio/wav",
+        "intended_use": "collect_sound",
+        "usage_priority": "optional",
+        "user_hint": "收集音效",
+        "agent_note": "用于星星收集反馈音效"
+      },
+      {
+        "asset_id": "asset-rules-file",
+        "filename": "rules.pdf",
+        "mime_type": "application/pdf",
+        "intended_use": "reference_file",
+        "usage_priority": "reference_only",
+        "user_hint": "玩法说明",
+        "agent_note": "用于理解玩法限制"
+      }
+    ]
+  },
+  "uploaded_assets": [
+    {
+      "asset_id": "asset-cat-image",
+      "filename": "cat.png",
+      "mime_type": "image/png",
+      "size_bytes": 1024,
+      "object_key": "uploads/user-step2-fixture/asset-cat-image/cat.png",
+      "local_fixture_path": "tests/fixtures/assets/cat.png",
+      "user_hint": "主角小猫"
+    },
+    {
+      "asset_id": "asset-forest-video",
+      "filename": "forest.mp4",
+      "mime_type": "video/mp4",
+      "size_bytes": 4096,
+      "object_key": "uploads/user-step2-fixture/asset-forest-video/forest.mp4",
+      "local_fixture_path": "tests/fixtures/assets/forest.mp4",
+      "user_hint": "森林氛围"
+    },
+    {
+      "asset_id": "asset-pop-audio",
+      "filename": "pop.wav",
+      "mime_type": "audio/wav",
+      "size_bytes": 2048,
+      "object_key": "uploads/user-step2-fixture/asset-pop-audio/pop.wav",
+      "local_fixture_path": "tests/fixtures/assets/pop.wav",
+      "user_hint": "收集音效"
+    },
+    {
+      "asset_id": "asset-rules-file",
+      "filename": "rules.pdf",
+      "mime_type": "application/pdf",
+      "size_bytes": 3072,
+      "object_key": "uploads/user-step2-fixture/asset-rules-file/rules.pdf",
+      "local_fixture_path": "tests/fixtures/assets/rules.pdf",
+      "user_hint": "玩法说明"
+    }
+  ]
+}

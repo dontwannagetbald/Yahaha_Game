@@ -9,6 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.auth import router as auth_router
 from app.config import settings
+from app.create_sessions import router as create_sessions_router
 from app.db import get_session
 from app.games import router as games_router
 from app.jobs import router as jobs_router
@@ -34,6 +35,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(create_sessions_router)
 app.include_router(games_router)
 app.include_router(play_events_router)
 app.include_router(jobs_router)

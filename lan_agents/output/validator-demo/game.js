@@ -1,0 +1,1 @@
+const canvas=document.getElementById('game');const ctx=canvas.getContext('2d');const bg='assets/background.png';const player='assets/player.png';ctx.fillStyle='#101418';ctx.fillRect(0,0,canvas.width,canvas.height);window.parent.postMessage({type:'game_ready'},'*');

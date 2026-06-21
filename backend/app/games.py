@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user, get_optional_current_user
+from app.config import settings
 from app.db import get_session
 from app.models import Game, GameLike, User
 
@@ -44,6 +47,19 @@ def _serialize_game_detail(
         }
     )
     return payload
+
+
+def _public_published_urls(game: Game) -> tuple[str, str, str | None]:
+    version = "v1"
+    public_root = settings.minio_public_endpoint.rstrip("/")
+    base_url = f"{public_root}/{settings.minio_bucket}/published/{game.id}/{version}/"
+    manifest_url = f"{base_url}manifest.json"
+    cover_url = game.cover_url
+    if cover_url and "/uploads/" not in cover_url:
+        parsed = urlparse(cover_url)
+        filename = parsed.path.rsplit("/", 1)[-1] or "cover.png"
+        cover_url = f"{base_url}assets/{filename}"
+    return manifest_url, base_url, cover_url
 
 
 @router.get("")
@@ -199,3 +215,27 @@ async def like_game(
         "like_count": game.like_count,
         "liked_by_me": liked_by_me,
     }
+
+
+@router.post("/{game_id}/publish")
+async def publish_game(
+    game_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> dict[str, object]:
+    game = await db.get(Game, game_id)
+    if game is None or game.owner_id != user.user_id or game.status == "deleted":
+        raise HTTPException(status_code=404, detail="Game not found")
+    if game.status != "draft":
+        raise HTTPException(status_code=409, detail="Game is not a draft")
+
+    manifest_url, artifact_base_url, cover_url = _public_published_urls(game)
+    game.status = "published"
+    game.published_at = datetime.now(timezone.utc)
+    game.manifest_url = manifest_url
+    game.artifact_base_url = artifact_base_url
+    game.cover_url = cover_url
+    await db.commit()
+    await db.refresh(game)
+
+    return _serialize_game_detail(game, user, liked_by_me=False)

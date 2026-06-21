@@ -314,7 +314,125 @@ MVP 范围：只允许删除自己的 draft 或任务产物，采用逻辑删除
 - 文件可以先上传，创建任务时再绑定到 `generation_job`。
 - 前端在聊天框下方展示文件列表。
 
-## 6. Jobs API
+## 6. Create Sessions API
+
+Create Session 是确认前对话会话，负责承载 `conversation_graph` 的 `chat / upload_assets / regenerate / confirm` 事件。它不等同于 `generation_job`；只有用户点击 `生成` 且会话进入 `confirmed` 后，前端才调用 Jobs API 创建后台生成任务。Confirmed 会话仍必须可读，用于历史任务回看和恢复当时的对话上下文。
+
+`POST /api/create-sessions` 只创建新会话；恢复历史任务对话必须通过任务返回的 `session_id` 调用 `GET /api/create-sessions/{session_id}`。如果要恢复完整聊天气泡，响应必须包含消息历史；只返回最近一轮 `assistant_response` 不足以渲染完整对话流。
+
+### POST `/api/create-sessions`
+
+权限：登录。
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| initial_message | string | 否 | 用户进入 Create 后的首条创意文本 |
+| asset_ids | string[] | 否 | 已上传但尚未绑定任务的素材 ID |
+
+成功响应：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| session_id | string | Create 对话会话 ID |
+| conversation_status | string | `collecting / ready_to_confirm / confirmed / error` |
+| user_requirements | object | 用户需求摘要 |
+| game_plan | object nullable | 当前完整游戏方案 |
+| material_usage | object | 素材用途计划，只包含 `assets` |
+| assistant_response | object | AI 回复、建议答案和卡片 |
+| messages | array | 当前会话消息历史，按时间正序 |
+| created_at | string | 创建时间 |
+| updated_at | string | 更新时间 |
+
+验证要点：
+
+- 本接口只用于创建新会话。
+- 点击历史任务或刷新历史任务时不得调用本接口创建新会话。
+
+### POST `/api/create-sessions/{session_id}/events`
+
+权限：owner。
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| type | string | 是 | `chat / upload_assets / regenerate / confirm` |
+| message | string | 条件必填 | 用户本轮自然语言输入；`chat` 时必填 |
+| uploaded_assets | object[] | 否 | 本轮可见素材元信息；`upload_assets` 时通常传入 |
+| selected_plan_id | string | 否 | 点击 `生成` 或 `换一换` 时对应的方案 ID |
+
+`uploaded_assets[]` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| asset_id | string | 素材 ID |
+| filename | string | 原始文件名 |
+| mime_type | string | MIME type |
+| size_bytes | number | 文件大小 |
+| object_key | string | 对象存储 key；不向模型或日志暴露完整 presigned URL |
+| user_hint | string nullable | 用户对素材用途的说明 |
+
+成功响应：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| session_id | string | Create 对话会话 ID |
+| conversation_status | string | 当前对话状态 |
+| user_requirements | object | 用户需求摘要 |
+| game_plan | object nullable | 当前完整游戏方案 |
+| material_usage | object | 素材用途计划，只包含 `assets` |
+| assistant_response.message | string | AI 回复 |
+| assistant_response.suggestions | string[] | 对当前 AI 提问的简短建议答案 |
+| assistant_response.card | object nullable | 游戏卡片，由 `game_plan` 派生 |
+| assistant_response.actions | string[] | 可用动作，如 `generate / regenerate` |
+| messages | array | 更新后的会话消息历史，按时间正序 |
+| handoff_to_generation | boolean | `confirm` 成功后为 `true` |
+| updated_at | string | 更新时间 |
+
+`assistant_response.card` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| plan_id | string | 对应 `game_plan.plan_id` |
+| title | string | 游戏标题 |
+| introduction | string | 游戏介绍 |
+| tags | string[] | 标签 |
+
+验证要点：
+
+- 每个 `chat` 事件至少追加一条用户消息和一条 AI 消息。
+- `upload_assets / regenerate / confirm` 事件需要追加可回看的事件消息或在最近消息 `payload.event_type` 中记录。
+- `assistant_response.suggestions` 必须是字符串列表，不是对象列表。
+- `assistant_response.card` 只包含 `plan_id / title / introduction / tags`。
+- `regenerate` 必须保持已有 `user_requirements.must_have`、`constraints` 和 `material_usage.assets`。
+- `confirm` 成功后返回 `handoff_to_generation=true`，但本接口不创建 `generation_job`。
+- 不在响应中返回完整 presigned URL、session id、API key、token 或 secret。
+
+### GET `/api/create-sessions/{session_id}`
+
+权限：owner。
+
+成功响应：与 `POST /api/create-sessions/{session_id}/events` 成功响应一致，但不触发新的 Agent 事件。
+
+`messages[]` 字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| id | string | 消息 ID |
+| role | string | `user / assistant / system` |
+| content | string | 消息正文 |
+| payload | object nullable | 建议答案、卡片快照、附件摘要、事件类型等展示补充 |
+| created_at | string | ISO 时间 |
+
+验证要点：
+
+- 只允许 owner 获取。
+- 刷新 Create 页面或点击历史任务后，前端通过该接口恢复当前 `user_requirements`、`game_plan`、`material_usage`、最近一轮 `assistant_response` 和完整 `messages`。
+- 本接口只能读取旧会话，不创建新会话。
+
+## 7. Jobs API
 
 ### POST `/api/jobs`
 
@@ -324,34 +442,23 @@ MVP 范围：只允许删除自己的 draft 或任务产物，采用逻辑删除
 
 | 字段 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| prompt | string | 是 | 自然语言创意 |
-| asset_ids | string[] | 否 | 已上传素材 ID |
-| confirmation | object | 是 | 最终确认卡片内容 |
-
-`confirmation` 字段：
-
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| title | string | 游戏标题 |
-| short_description | string | 一句话简介 |
-| game_type | string | 游戏类型 |
-| core_gameplay | string | 核心玩法 |
-| win_lose_condition | string | 胜负条件 |
-| controls | string | 操作方式 |
-| assets_used | string | 使用到的素材 |
-| tags | string[] | 标签 |
-| cover_suggestion | string | 封面建议 |
+| session_id | string | 是 | 已确认的 Create 对话会话 ID |
+| prompt | string | 否 | 原始自然语言创意摘要；可由 `user_requirements.intent_summary` 派生 |
 
 成功响应：
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | job_id | string | 任务 ID |
+| session_id | string | 关联的 Create 对话会话 ID |
 | status | string | `pending` |
 | created_at | string | 创建时间 |
 
 验证要点：
 
+- 只有 `session_id` 对应会话为 `confirmed` 时才能创建任务。
+- 后端从 confirmed `create_session` 读取 `user_requirements`、`game_plan`、`material_usage` 快照，不信任前端重复提交这些字段。
+- 新创建任务必须保存 `session_id`，供任务历史反查对应 `create_session`。
 - 支持并发创建多个任务。
 - 单任务最多绑定 `5` 个文件。
 - 创建后可离开页面，回来通过任务历史继续查看。
@@ -371,6 +478,8 @@ MVP 范围：只允许删除自己的 draft 或任务产物，采用逻辑删除
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | job_id | string | 任务 ID |
+| session_id | string nullable | 关联 Create 对话会话 ID；历史任务可为空 |
+| parent_job_id | string nullable | revision job 的上一版任务 ID；初始任务为空 |
 | title | string | 任务名，可取确认卡片标题 |
 | status | string | `pending / running / succeeded / failed` |
 | created_at | string | 创建时间 |
@@ -385,12 +494,68 @@ MVP 范围：只允许删除自己的 draft 或任务产物，采用逻辑删除
 - 只返回当前用户任务。
 - 按创建时间倒序。
 - 多个并发任务状态互不覆盖。
+- 前端点击历史任务时，必须优先使用 `session_id` 拉取 `GET /api/create-sessions/{session_id}` 恢复聊天上下文。
 
 ### GET `/api/jobs/{job_id}`
 
 权限：owner。
 
-成功响应：返回单个任务详情，并包含 `artifact_prefix`、`manifest_url`、`game_id`、`error_message` 等字段。
+成功响应字段：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| job_id | string | 任务 ID |
+| session_id | string nullable | 关联 Create 对话会话 ID；历史任务可为空 |
+| parent_job_id | string nullable | revision job 的上一版任务 ID；初始任务为空 |
+| status | string | `pending / running / succeeded / failed` |
+| title | string | 任务名 |
+| game_id | string nullable | 成功后关联 draft game |
+| artifact_prefix | string nullable | 产物对象存储路径 |
+| manifest_url | string nullable | draft manifest 授权 URL 或 published URL |
+| artifact_base_url | string nullable | 产物基础 URL |
+| result_summary | string nullable | 结果摘要 |
+| error_message | string nullable | 失败原因 |
+| revision_intent | string nullable | 生成后修改意图摘要 |
+| created_at | string | 创建时间 |
+| started_at | string nullable | 开始时间 |
+| finished_at | string nullable | 结束时间 |
+
+验证要点：
+
+- owner 可读取自己任务的关联 `session_id` 和产物信息。
+- 如果任务是 revision job，必须返回 `parent_job_id`。
+- 不返回完整 presigned URL 签名或敏感字段。
+
+### POST `/api/jobs/{job_id}/revisions`
+
+权限：owner。
+
+状态：后续版本契约；生成后聊天修改使用该接口或等价 revision job 创建接口，不复用第一阶段 `chat` 事件。
+
+请求字段：
+
+| 字段 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| message | string | 是 | 用户本轮明确修改诉求 |
+| base_session_id | string | 否 | 原任务关联的 Create Session；未传时由 `job_id` 反查 |
+
+成功响应：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| job_id | string | 新 revision job ID |
+| parent_job_id | string | 被修改的上一版 job ID |
+| session_id | string | 关联的原 Create Session ID |
+| status | string | `pending` |
+| revision_intent | string | 修改意图摘要 |
+| assistant_response.message | string | 给用户的简短反馈 |
+
+验证要点：
+
+- 只有 `succeeded / failed` 的任务允许进入 revision loop；`pending / running` 返回 409。
+- 后端基于原任务快照、已生成结果和新消息生成 patch，再创建新的 revision job。
+- revision job 不覆盖旧任务、旧 draft 或原始 `create_session` 快照。
+- 用户消息过于模糊或冲突时，可以返回需要澄清的错误或 `requires_clarification` 响应，而不是创建任务。
 
 ### GET `/api/jobs/{job_id}/logs`
 
@@ -416,7 +581,7 @@ MVP 范围：只允许删除自己的 draft 或任务产物，采用逻辑删除
 - 按时间正序。
 - 不暴露密钥或完整签名 URL。
 
-## 7. Play Events API
+## 8. Play Events API
 
 ### POST `/api/play-events`
 
@@ -446,7 +611,7 @@ MVP 范围：只允许删除自己的 draft 或任务产物，采用逻辑删除
 - `view` 或 `started` 更新 `play_count`，具体实现只能选择一种计数触发，避免重复计数。
 - 无效 `event_type` 被拒绝。
 
-## 8. 前端 Mock 契约
+## 9. 前端 Mock 契约
 
 前端可在后端未完成时使用本契约构造 mock 数据，但字段名必须与本文档一致。
 

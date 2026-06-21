@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "title": "桌面素材冒险",
+  "description": "玩家控制用户提供的角色，在用户提供的背景场景中移动，收集闪光道具并避开障碍，坚持到倒计时结束。",
+  "entry": "index.html",
+  "styles": [
+    "style.css"
+  ],
+  "scripts": [
+    "game.js"
+  ],
+  "assets": [
+    "assets/background.png",
+    "assets/player.png"
+  ],
+  "cover": "",
+  "controls": [
+    "方向键或 WASD 移动"
+  ],
+  "runtime": "html5-iframe",
+  "generatedAt": "2026-06-21T06:42:54.874636Z"
+}

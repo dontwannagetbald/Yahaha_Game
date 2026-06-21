@@ -5,6 +5,7 @@ const root = resolve(new URL(".", import.meta.url).pathname, "..");
 const play = readFileSync(resolve(root, "src/pages/PlayPage.tsx"), "utf8");
 const playCss = readFileSync(resolve(root, "src/pages/play.css"), "utf8");
 const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
+const gamesLib = readFileSync(resolve(root, "src/lib/games.ts"), "utf8");
 const descriptionIndex = play.indexOf('<p className="play-description">');
 const controlsSectionIndex = play.indexOf('<section className="play-controls-section"');
 const tagRowIndex = play.indexOf('<div className="tag-row">');
@@ -39,6 +40,23 @@ const requiredAppTokens = [
   "onOpenGame={openPlay}",
 ];
 
+const requiredGamesLibTokens = [
+  "const GAME_TAG_LABELS",
+  "survival:",
+  "arcade:",
+  "puzzle:",
+  "action:",
+  "platformer:",
+  "racing:",
+  "adventure:",
+  "horror:",
+  "strategy:",
+  "sports:",
+  "cozy:",
+  "simulate:",
+  "mapGameTagToChinese",
+];
+
 const requiredCssTokens = [
   ".play-page .like-button",
   ".play-page .like-button.active",
@@ -65,6 +83,12 @@ for (const token of requiredPlayTokens) {
 for (const token of requiredAppTokens) {
   if (!app.includes(token)) {
     failures.push(`Expected App.tsx to include: ${token}`);
+  }
+}
+
+for (const token of requiredGamesLibTokens) {
+  if (!gamesLib.includes(token)) {
+    failures.push(`Expected games.ts to include: ${token}`);
   }
 }
 

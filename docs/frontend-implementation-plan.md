@@ -80,7 +80,7 @@
 
 - [ ] 指令：Create 使用左侧任务列表、聊天与上传区、生成游戏显示面板布局。
 - [ ] 指令：左侧包含任务列表、任务状态、`+ 新建任务`、聊天输入框、附件入口、发送入口。
-- [ ] 指令：中部或右侧包含 Agent 欢迎消息、用户消息、最终确认卡片、生成游戏面板、进度条、Agent 步骤列表、Publish 和 Retry。
+- [ ] 指令：中部或右侧包含 Agent 欢迎消息、用户消息、游戏卡片、生成游戏面板、进度条、Agent 步骤列表、Publish 和 Retry。
 - [ ] 指令：本阶段不做真实上传、不做真实任务创建、不做真实发布。
 - [ ] 验证：登录状态下能进入 Create；Create 页面不出现结构化游戏参数表单；任务状态 badge 可显示 `pending / running / succeeded / failed` 中至少两种；Publish 和 Retry 是可见但不调用 API 的静态按钮。
 
@@ -256,42 +256,84 @@
 
 - [ ] 指令：Create 登录后请求当前用户任务历史。
 - [ ] 指令：左侧任务列表显示任务名、状态、创建时间和结果摘要。
+- [ ] 指令：任务历史必须读取并保存每个任务的 `session_id`，用于点击历史任务时恢复对应对话。
 - [ ] 指令：只展示当前用户任务。
-- [ ] 验证：未登录访问 Create 弹 Auth Modal；登录后能看到任务历史；刷新 Create 后任务历史仍存在；多个任务状态互不影响。
+- [ ] 验证：未登录访问 Create 弹 Auth Modal；登录后能看到任务历史；刷新 Create 后任务历史仍存在；任务项包含 `job_id` 与 `session_id`；多个任务状态互不影响。
 
-### Step 6.2：接入自然语言输入
+### Step 6.2：拆分 Create 页任务状态与会话状态 ☑️ 已完成
 
-- [ ] 指令：用户通过聊天输入描述游戏创意。
+- [ ] 指令：Create 页必须至少维护 `selectedTaskId`、`selectedCreateSessionId`、`currentJobStatus` 和 `isConversationLocked` 四类状态。
+- [ ] 指令：不要把 task id 和 create session id 混成一个当前 ID。
+- [ ] 指令：`+ 新建任务` 创建新的空 `create_session`，聊天区清空并可编辑，右侧生成面板回到 idle。
+- [ ] 指令：点击历史任务时，从任务的 `session_id` 调用 `GET /api/create-sessions/{session_id}`，恢复该任务当时的对话上下文。
+- [ ] 指令：点击历史任务时禁止调用 `POST /api/create-sessions`；该接口只用于新建空白对话。
+- [ ] 指令：Create 页确认前状态必须来自 `Create Sessions API`，不再用本地临时对象替代 `user_requirements`、`game_plan`、`material_usage`、`assistant_response`。
+- [ ] 指令：聊天气泡必须优先来自 `create_session.messages`；`assistant_response` 只能作为最近一轮状态和当前动作来源。
+- [ ] 指令：刷新页面后，任务列表从 `GET /api/jobs` 恢复；如果当前选中任务有 `session_id`，聊天区恢复该 session；如果没有任务或用户点击新建任务，再创建空会话。
+- [ ] 指令：如果恢复失败或会话不可读，允许用户重新创建新会话，并显示明确错误。
+- [ ] 验证：首次进入 Create 可创建空会话；点击历史任务能按 `session_id` 恢复对应对话且不会创建新 session；刷新后任务列表和选中任务上下文一致；存在 `messages` 时聊天气泡完整恢复；Console 输出 `job_id`、`session_id`、恢复命中状态和请求摘要，不输出敏感字段。
+
+### Step 6.3：接入聊天输入与 AI 建议答案 ☑️ 已完成
+
+- [ ] 指令：用户通过聊天输入描述游戏创意或补充要求，发送时调用 `POST /api/create-sessions/{session_id}/events` 的 `chat` 事件。
+- [ ] 指令：只有 `isConversationLocked=false` 且当前处于第一阶段 `collecting / ready_to_confirm` 时，才允许发送第一阶段 `chat` 事件。
 - [ ] 指令：不新增玩法、风格、角色、胜负条件等结构化表单。
-- [ ] 指令：空创意不能提交。
-- [ ] 验证：输入有效创意可进入下一步；空输入显示错误；页面没有结构化表单字段。
+- [ ] 指令：空输入不能提交；发送中需要禁用重复提交。
+- [ ] 指令：AI 每轮回复后展示 `assistant_response.message`，并将 `assistant_response.suggestions` 作为可点击的竖向短按钮展示在回复下方。
+- [ ] 指令：事件成功后用响应中的 `messages` 更新聊天气泡；如果后端暂未提供 `messages`，只能临时追加本轮用户消息和 `assistant_response.message`，并在后续恢复时以服务端 `messages` 为准。
+- [ ] 指令：用户点击发送或按 Enter 后，聊天区先立刻追加用户气泡；如果请求超过 `2s` 仍未返回，再追加一条 AI `思考中...` 占位气泡；接口成功后再用服务端 `messages` 替换，占位不落库。
+- [ ] 指令：当用户气泡或延迟出现的 AI `思考中...` 占位追加到消息流后，聊天区需要自动滚到底部，不能让占位气泡落到可视区外。
+- [ ] 指令：点击建议按钮后，只将该建议回填到输入框，不自动发送；用户需要再点击发送按钮才提交 `chat` 事件。
+- [ ] 指令：只有当返回的 `conversation_status` 为 `ready_to_confirm` 时，才显示可生成的游戏卡片和后续动作按钮。
+- [ ] 验证：输入有效创意会触发 `chat` 事件；发送后立即看到用户气泡；若请求超过 `2s` 才出现 AI `思考中...` 占位；锁定状态下不能发送第一阶段 `chat`；空输入显示错误；建议答案以竖向按钮展示；点击建议只回填输入框且不触发请求；页面没有结构化表单字段；Console 输出事件类型、响应状态和 suggestions 数量摘要。
 
-### Step 6.3：接入文件上传
+### Step 6.4：接入文件上传与素材绑定事件 ☑️ 已完成
 
 - [ ] 指令：附件入口支持选择任意文件。
 - [ ] 指令：上传前请求 presigned URL，上传完成后登记文件信息。
+- [ ] 指令：上传完成后必须继续向当前 `create_session` 发送 `upload_assets` 事件，把素材绑定到会话并更新 `material_usage.assets`。
 - [ ] 指令：单文件超过 20MB 时阻止上传并显示错误。
-- [ ] 验证：小文件上传成功后显示在聊天框下方；大文件显示错误；上传失败时可重试；Console 输出文件名、大小、MIME type 和 object key 摘要。
+- [ ] 指令：聊天框下方展示当前会话已选择或已绑定的素材列表，并允许删除尚未提交的本地选择。
+- [ ] 指令：`upload_assets` system 消息只作为历史事件保留，不渲染为 AI 聊天气泡；用户只在附件列表看到已绑定素材。
+- [ ] 验证：小文件上传成功后显示在聊天框下方，并触发 `upload_assets`；聊天流不出现“上传素材”AI 气泡；大文件显示错误；上传失败时可重试；刷新页面后已绑定素材仍可恢复；Console 输出文件名、大小、MIME type、object key 摘要和素材绑定结果。
 
-### Step 6.4：接入最终确认卡片
+### Step 6.5：接入游戏卡片、换一换与确认动作
 
-- [ ] 指令：AI 追问或 mock 追问结束后展示最终确认卡片。
-- [ ] 指令：确认卡片展示游戏标题、一句话简介、游戏类型、核心玩法、操作方式、素材用途、标签和封面建议。
-- [ ] 指令：用户确认后才能创建生成任务。
-- [ ] 验证：确认卡片字段完整；用户修改后本地状态同步；未确认不能创建任务；创建任务请求包含确认卡片信息。
+- [ ] 指令：当会话进入 `ready_to_confirm` 时，展示由 `assistant_response.card` 派生的游戏卡片。
+- [ ] 指令：游戏卡片只展示 `plan_id`、标题、介绍和标签，不展示完整 `game_plan` 字段，不支持卡片内联编辑。
+- [ ] 指令：用户想修改方案时，只能继续发送聊天消息，由 AI 更新 `game_plan` 和派生卡片。
+- [ ] 指令：`换一换` 只在 `ready_to_confirm` 状态显示，点击后发送 `regenerate` 事件，并带上当前 `selected_plan_id`。
+- [ ] 指令：`生成` 只在 `ready_to_confirm` 状态可用，点击后发送 `confirm` 事件；`confirm` 成功前不调用 Jobs API。
+- [ ] 指令：`regenerate` 成功后要替换为新的卡片和 `plan_id`，同时保留已有聊天上下文与素材列表。
+- [ ] 验证：`ready_to_confirm` 时卡片常驻显示；`换一换` 只在可确认阶段出现；点击 `换一换` 后卡片内容或 `plan_id` 变化；点击 `生成` 前不会创建任务；`confirm` 成功后拿到 `handoff_to_generation=true`；Console 输出 `selected_plan_id`、事件类型和会话状态变化摘要。
 
-### Step 6.5：创建生成任务
+### Step 6.6：基于 confirmed session 创建生成任务 ☑️ 已完成
 
-- [ ] 指令：提交自然语言创意、上传素材 ID 和确认卡片内容创建任务。
-- [ ] 指令：创建成功后任务进入左侧列表，初始状态为 pending。
-- [ ] 验证：有效请求返回 job id；新任务出现在任务列表；创建失败显示错误；Console 输出 job id 和请求摘要。
+- [x] 指令：只有当前 `create_session` 成功 `confirm` 后，前端才调用 `POST /api/jobs`。
+- [x] 指令：创建任务请求只提交 `session_id` 和可选 `prompt`，不重复提交 `user_requirements`、`game_plan`、`material_usage` 或确认卡片内容。
+- [x] 指令：创建成功后新任务进入左侧列表，初始状态为 `pending`，并切换右侧生成面板关注该任务。
+- [x] 指令：创建成功后写入 `selectedTaskId=job_id`、`selectedCreateSessionId=session_id`、`currentJobStatus=pending`，并设置 `isConversationLocked=true`。
+- [x] 指令：如果创建任务失败，保留当前 confirmed 会话和游戏卡片，允许用户重试创建任务。
+- [x] 验证：有效请求返回 `job_id` 和 `session_id`；新任务出现在任务列表；聊天区变为只读；创建失败显示错误；创建任务请求摘要中只有 `session_id` 和可选 `prompt`；Console 输出 `job_id`、`session_id` 和请求结果摘要。
 
-### Step 6.6：轮询任务状态与日志
+### Step 6.7：轮询任务状态与日志
 
 - [ ] 指令：定时刷新当前任务状态和 Agent 日志。
-- [ ] 指令：生成面板显示 pending、running、succeeded、failed、timeout 状态。
-- [ ] 指令：failed 时显示失败步骤和原因。
-- [ ] 验证：pending 能更新到 running；running 显示当前步骤；succeeded 显示完整日志摘要；failed 显示失败原因；日志顺序与接口一致。
+- [ ] 指令：生成面板显示 `pending`、`running`、`succeeded`、`failed`、`timeout` 状态。
+- [ ] 指令：`failed` 时显示失败步骤和原因。
+- [ ] 指令：当用户从任务列表切换任务时，右侧面板和日志区域同步切换到当前选中任务。
+- [ ] 指令：`pending / running` 时 `isConversationLocked=true`，禁用输入、建议答案、上传、生成、换一换和重新生成。
+- [ ] 指令：`succeeded / failed` 时允许进入生成后修改入口，但不能继续调用第一阶段 `chat / regenerate / confirm` 来改已生成游戏。
+- [ ] 验证：`pending` 能更新到 `running`；`running` 显示当前步骤且聊天区锁定；`succeeded` 显示完整日志摘要并展示生成后修改入口；`failed` 显示失败原因并可进入修改或 retry 入口；日志顺序与接口一致；切换任务时右侧显示和聊天上下文同步更新。
+
+### Step 6.8：接入生成后修改入口
+
+- [ ] 指令：当当前任务为 `succeeded / failed`，用户在聊天框输入明确修改时，进入 revision mode。
+- [ ] 指令：revision mode 使用当前任务的 `job_id`、关联 `session_id`、已有 `game_plan` 和用户新消息创建新的 revision job；不调用第一阶段 `POST /api/create-sessions/{session_id}/events` 的 `chat`。
+- [ ] 指令：MVP 可先调用后续契约 `POST /api/jobs/{job_id}/revisions` 或使用 mock 占位，但 UI 状态必须表现为创建新任务、重新生成一版 draft。
+- [ ] 指令：新 revision job 创建成功后，左侧新增任务项，`parent_job_id` 指向上一版任务，并切换生成面板到新任务。
+- [ ] 指令：旧任务、旧 draft、旧 session 对话上下文必须保留，可点击回看。
+- [ ] 验证：succeeded/failed 任务下输入明确修改不会触发第一阶段 `chat`；会创建或 mock 创建新 revision job；任务列表出现新版本任务；旧任务仍可点击回看；Console 输出 `parent_job_id`、新 `job_id`、`session_id` 和 revision intent 摘要。
 
 ## 7. 第七大步：接入 Create 试玩与发布
 
@@ -334,8 +376,8 @@
 
 ### Step 8.4：Create 到 Publish 闭环验收
 
-- [ ] 指令：登录用户创建任务、上传文件、确认生成、等待 succeeded、试玩、Publish。
-- [ ] 验证：任务状态完整变化；Agent 日志可见；试玩 iframe 可运行；发布成功后 Home 出现新游戏。
+- [ ] 指令：登录用户创建空 `create_session`、发送聊天消息、点击建议答案、上传文件并绑定素材、在 `ready_to_confirm` 状态下点击 `换一换` 或 `生成`、基于 confirmed `session_id` 创建任务、等待 succeeded、试玩、可选进入 revision mode、Publish。
+- [ ] 验证：Create Session 与任务链路完整打通；建议答案可点击；游戏卡片只展示标题、介绍、标签；任务状态完整变化；任务可通过 `session_id` 恢复历史对话；Agent 日志可见；试玩 iframe 可运行；生成后修改不会混入第一阶段对话 loop；发布成功后 Home 出现新游戏。
 
 ### Step 8.5：Play 远端加载验收
 
@@ -355,7 +397,7 @@
 - [ ] 不做收藏。
 - [ ] 不做发布后编辑标题、简介、标签、封面。
 - [ ] 不做取消发布。
-- [ ] 不做版本管理。
+- [ ] 不做完整版本管理 UI。
 - [ ] 不做 Remix。
 - [ ] 不做 GitHub OAuth 真实跑通。
 - [ ] 不在页面内新增 Printer 或调试面板。

@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "test:static-ui": "node scripts/check-static-ui.mjs",
     "test:auth-client": "node scripts/check-auth-client.mjs",
+    "test:api-error-parsing": "node scripts/check-api-error-parsing.mjs",
     "test:current-user": "node scripts/check-current-user.mjs",
     "test:auth-ui": "node scripts/check-auth-ui.mjs",
     "test:app-infra": "node scripts/check-app-infra.mjs",
@@ -17,7 +18,15 @@
     "test:home-api": "node scripts/check-home-api.mjs",
     "test:play-page": "node scripts/check-play-page.mjs",
     "test:play-runtime": "node scripts/check-play-runtime.mjs",
-    "test:create-layout": "node scripts/check-create-layout.mjs"
+    "test:create-layout": "node scripts/check-create-layout.mjs",
+    "test:create-tasks": "node scripts/check-create-tasks.mjs",
+    "test:create-session-state": "node scripts/check-create-session-state.mjs",
+    "test:create-suggestions": "node scripts/check-create-suggestions.mjs",
+    "test:create-confirm-card": "node scripts/check-create-confirm-card.mjs",
+    "test:create-chat-event": "node scripts/check-create-chat-event.mjs",
+    "test:create-upload-assets": "node scripts/check-create-upload-assets.mjs",
+    "test:create-agent-progress": "node scripts/check-create-agent-progress.mjs",
+    "test:create-publish": "node scripts/check-create-publish.mjs"
   },
   "dependencies": {
     "antd": "latest",

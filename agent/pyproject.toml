@@ -1,9 +1,0 @@
-[project]
-name = "yahaha-agent-prototype"
-version = "0.1.0"
-description = "Standalone LangGraph-style agent prototype for Yahaha game generation."
-requires-python = ">=3.13"
-dependencies = []
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

@@ -14,6 +14,8 @@ const requiredByFile = new Map([
     "src/api/client.ts",
     [
       "import.meta.env.VITE_API_BASE_URL",
+      "rawApiBaseUrl",
+      "if (!apiBaseUrl)",
       "credentials: \"include\"",
       "ApiError",
       "parseApiError",
@@ -42,8 +44,11 @@ const requiredByFile = new Map([
     "vite.config.ts",
     [
       'envDir: ".."',
+      "loadEnv",
+      "VITE_API_PROXY_TARGET",
+      "apiProxyTarget",
       '"/api"',
-      'target: "http://localhost:8000"',
+      "target: apiProxyTarget",
       "changeOrigin: true",
     ],
   ],

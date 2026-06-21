@@ -1,46 +1,566 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
+import type { AuthUser } from "../api/auth";
+import type { CreateSessionMessage, CreateSessionState } from "../api/create-sessions";
+import { MAX_CREATE_UPLOAD_SIZE_BYTES } from "../api/uploads";
 import { logConsoleEvent } from "../lib/console";
-import type { MockTask } from "../mock/runtime";
+import type { UserFacingError } from "../lib/errors";
 import "./create.css";
 
-type CreatePageProps = {
-  tasks: MockTask[];
+export type CreateTaskItem = {
+  job_id: string;
+  session_id: string | null;
+  parent_job_id: string | null;
+  title: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  created_at: string;
+  game_id: string | null;
+  result_summary: string | null;
+  error_message: string | null;
+  validation_report: Record<string, unknown> | null;
 };
 
-export function CreatePage({ tasks }: CreatePageProps) {
-  const [tasksExpanded, setTasksExpanded] = useState(true);
-  const [selectedFiles, setSelectedFiles] = useState<string[]>([]);
+export type CreateUploadedFileItem = {
+  id: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  status: "uploading" | "failed";
+  file?: File;
+  error?: string;
+};
+
+type CreateBoundFileItem = {
+  id: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  status: "bound";
+  error?: string;
+};
+
+type MessageAttachmentItem = {
+  id: string;
+  name: string;
+  size: number;
+  mimeType: string;
+};
+
+type JobProgressStepStatus = "pending" | "running" | "succeeded" | "failed";
+
+type JobProgressStep = {
+  label: string;
+  status: JobProgressStepStatus;
+};
+
+type JobProgressView = {
+  label: string;
+  percent: number;
+  steps: JobProgressStep[];
+};
+
+type AgentProgressStepDefinition = {
+  label: string;
+  nodeNames: string[];
+};
+
+export type CreateAgentLogItem = {
+  step: string;
+  level: "info" | "warning" | "error";
+  message: string;
+  created_at: string;
+};
+
+type RenderableConversationMessage = CreateSessionMessage & {
+  attachments: MessageAttachmentItem[];
+};
+
+type CreatePageProps = {
+  tasks: CreateTaskItem[];
+  tasksLoading: boolean;
+  tasksError: UserFacingError | null;
+  selectedTaskId: string | null;
+  selectedCreateSessionId: string | null;
+  currentJobStatus: CreateTaskItem["status"] | null;
+  agentLogs: CreateAgentLogItem[];
+  agentLogsError: UserFacingError | null;
+  isConversationLocked: boolean;
+  createSession: CreateSessionState | null;
+  createSessionLoading: boolean;
+  createSessionError: UserFacingError | null;
+  createSessionSending: boolean;
+  createSessionPendingEventType:
+    | "chat"
+    | "upload_assets"
+    | "regenerate"
+    | "confirm"
+    | "redo"
+    | null;
+  currentUser: AuthUser | null;
+  publishingGameId: string | null;
+  onRetryTasks: () => void;
+  onCreateNewSession: () => void;
+  onSelectTask: (task: CreateTaskItem) => void;
+  onPublishGame: (task: CreateTaskItem) => Promise<boolean>;
+  onConfirmCard: () => Promise<boolean>;
+  onRegenerateCard: () => Promise<boolean>;
+  onRedoGeneratedGame: () => Promise<boolean>;
+  onSendMessage: (message: string) => Promise<boolean>;
+  onUploadFiles: (files: File[]) => Promise<boolean>;
+  onRemoveBoundFile: (assetId: string) => Promise<boolean>;
+};
+
+function getUserAvatarInitial(user: AuthUser | null): string {
+  const displayName = user?.display_name?.trim();
+  const emailPrefix = user?.email?.split("@", 1)[0]?.trim();
+  const label = displayName || emailPrefix || "我";
+  return label.slice(0, 1).toUpperCase();
+}
+
+function hasCardPayload(message: CreateSessionMessage): boolean {
+  if (!message.payload || typeof message.payload !== "object") {
+    return false;
+  }
+
+  const card = (message.payload as Record<string, unknown>).card;
+  return Boolean(card && typeof card === "object");
+}
+
+function getMessageAttachments(message: CreateSessionMessage): MessageAttachmentItem[] {
+  const payload =
+    message.payload && typeof message.payload === "object"
+      ? (message.payload as Record<string, unknown>)
+      : null;
+  if (!payload || payload.event_type !== "upload_assets") {
+    return [];
+  }
+
+  const rawAssets = (payload as Record<string, unknown>).assets;
+  if (!Array.isArray(rawAssets)) {
+    return [];
+  }
+
+  return rawAssets.flatMap((asset, index) => {
+    if (!asset || typeof asset !== "object") {
+      return [];
+    }
+
+    const assetRecord = asset as Record<string, unknown>;
+    const filename = typeof assetRecord.filename === "string" ? assetRecord.filename : null;
+    const assetId =
+      typeof assetRecord.asset_id === "string" ? assetRecord.asset_id : `${message.id}-${index}`;
+
+    if (!filename) {
+      return [];
+    }
+
+    return [
+      {
+        id: assetId,
+        name: filename,
+        size: typeof assetRecord.size_bytes === "number" ? assetRecord.size_bytes : 0,
+        mimeType:
+          typeof assetRecord.mime_type === "string"
+            ? assetRecord.mime_type
+            : "application/octet-stream",
+      },
+    ];
+  });
+}
+
+function buildRenderableMessages(messages: CreateSessionMessage[]): RenderableConversationMessage[] {
+  const renderableMessages: RenderableConversationMessage[] = [];
+  let pendingAttachments: MessageAttachmentItem[] = [];
+  let pendingAttachmentMessageId: string | null = null;
+  let pendingAttachmentCreatedAt: string | null = null;
+
+  for (const message of messages) {
+    if (message.payload?.event_type === "upload_assets") {
+      pendingAttachments = getMessageAttachments(message);
+      pendingAttachmentMessageId = message.id;
+      pendingAttachmentCreatedAt = message.created_at;
+      continue;
+    }
+
+    if (message.role === "assistant" && hasCardPayload(message)) {
+      continue;
+    }
+
+    if (message.role === "system") {
+      continue;
+    }
+
+    renderableMessages.push({
+      ...message,
+      attachments: message.role === "user" ? pendingAttachments : [],
+    });
+
+    if (message.role === "user") {
+      pendingAttachments = [];
+      pendingAttachmentMessageId = null;
+      pendingAttachmentCreatedAt = null;
+    }
+  }
+
+  if (pendingAttachments.length > 0) {
+    renderableMessages.push({
+      id: `${pendingAttachmentMessageId ?? "pending-attachments"}-bubble`,
+      role: "user",
+      content: "",
+      payload: null,
+      attachments: pendingAttachments,
+      created_at: pendingAttachmentCreatedAt ?? new Date(0).toISOString(),
+    });
+  }
+
+  return renderableMessages;
+}
+
+const GENERATION_AGENT_PROGRESS_STEPS: AgentProgressStepDefinition[] = [
+  {
+    label: "初始化生成上下文",
+    nodeNames: ["init_generation_context"],
+  },
+  {
+    label: "Orchestrator 编排方案",
+    nodeNames: ["orchestrator", "build_parallel_contracts"],
+  },
+  {
+    label: "Coding Agent 生成代码",
+    nodeNames: ["coding_agent", "draft_code"],
+  },
+  {
+    label: "Asset Agent 生成素材",
+    nodeNames: ["asset_agent", "run_asset_agent"],
+  },
+  {
+    label: "Debug Agent 联调修复",
+    nodeNames: ["join_assets_and_code", "debug_agent", "debug_code_with_assets"],
+  },
+  {
+    label: "Validator Agent 验收",
+    nodeNames: ["validator_agent", "validate_final_delivery"],
+  },
+];
+
+function getJobProgressView(
+  status: CreateTaskItem["status"] | null,
+  agentLogs: CreateAgentLogItem[],
+): JobProgressView {
+  const agentSteps = GENERATION_AGENT_PROGRESS_STEPS.map((step) => ({
+    label: step.label,
+    status: getStepStatusFromLogs(step.nodeNames, agentLogs, status),
+  }));
+  const steps = agentSteps;
+  const succeededCount = steps.filter((step) => step.status === "succeeded").length;
+  const hasFailedStep = steps.some((step) => step.status === "failed");
+  const percent =
+    status === "succeeded"
+      ? 100
+      : status === "failed" || hasFailedStep
+        ? Math.round((succeededCount / steps.length) * 100)
+        : Math.round((succeededCount / steps.length) * 100);
+
+  return {
+    label:
+      status === "succeeded"
+        ? "生成完成"
+        : status === "failed" || hasFailedStep
+          ? "生成失败"
+          : status === "running"
+            ? "生成中"
+            : status === "pending"
+              ? "准备生成"
+              : "等待生成",
+    percent,
+    steps,
+  };
+}
+
+function getStepStatusFromLogs(
+  nodeNames: string[],
+  agentLogs: CreateAgentLogItem[],
+  jobStatus: CreateTaskItem["status"] | null,
+): JobProgressStepStatus {
+  const matchingLogs = agentLogs.filter((log) => nodeNames.includes(log.step));
+  if (matchingLogs.some((log) => log.level === "error" || log.message.includes(" failed"))) {
+    return "failed";
+  }
+  if (
+    matchingLogs.some(
+      (log) =>
+        log.message.includes(" completed") ||
+        log.message.includes("Generated ") ||
+        log.message.includes("Drafted ") ||
+        log.message.includes("Joined ") ||
+        log.message.includes("Completed ") ||
+        log.message.includes("Initialized "),
+    )
+  ) {
+    return "succeeded";
+  }
+  if (matchingLogs.some((log) => log.message.includes(" started"))) {
+    return "running";
+  }
+  if (jobStatus === "succeeded") {
+    return "succeeded";
+  }
+  return "pending";
+}
+
+export function CreatePage({
+  tasks,
+  tasksLoading,
+  tasksError,
+  selectedTaskId,
+  selectedCreateSessionId,
+  currentJobStatus,
+  agentLogs,
+  agentLogsError,
+  isConversationLocked,
+  createSession,
+  createSessionLoading,
+  createSessionError,
+  createSessionSending,
+  createSessionPendingEventType,
+  currentUser,
+  publishingGameId,
+  onRetryTasks,
+  onCreateNewSession,
+  onSelectTask,
+  onPublishGame,
+  onConfirmCard,
+  onRegenerateCard,
+  onRedoGeneratedGame,
+  onSendMessage,
+  onUploadFiles,
+  onRemoveBoundFile,
+}: CreatePageProps) {
+  const [tasksExpanded, setTasksExpanded] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<CreateUploadedFileItem[]>([]);
+  const [composerText, setComposerText] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const messageStreamRef = useRef<HTMLDivElement | null>(null);
+
+  let taskHistoryContent: React.ReactNode = null;
+
+  if (tasksLoading) {
+    taskHistoryContent = <p className="task-list-state">任务历史加载中</p>;
+  } else if (tasksError) {
+    taskHistoryContent = (
+      <div className="task-list-state task-list-error" role="alert">
+        <p>{tasksError.message}</p>
+        <button className="secondary-pill full-width" onClick={onRetryTasks} type="button">
+          重试任务历史
+        </button>
+      </div>
+    );
+  } else if (tasks.length === 0) {
+    taskHistoryContent = <p className="task-list-state">暂无历史任务</p>;
+  } else {
+    taskHistoryContent = tasks.map((task) => (
+      <button
+        className={`task-item ${selectedTaskId === task.job_id ? "selected" : ""}`}
+        key={task.job_id}
+        onClick={() => onSelectTask(task)}
+        type="button"
+      >
+        <div className="task-head">
+          <strong>{task.title}</strong>
+          <span className={`badge ${task.status}`}>{task.status}</span>
+        </div>
+      </button>
+    ));
+  }
 
   useEffect(() => {
     logConsoleEvent("create", {
       requestPath: "/api/jobs",
       status: 200,
-      businessStatus: "mock_jobs",
+      businessStatus: "rendered",
       count: tasks.length,
     });
   }, [tasks.length]);
 
-  function handleFileSelect(event: ChangeEvent<HTMLInputElement>) {
-    const nextFiles = Array.from(event.target.files ?? []).map((file) => file.name);
-    setSelectedFiles((current) => {
-      const merged = [...current];
+  useEffect(() => {
+    setSelectedFiles([]);
+  }, [selectedCreateSessionId]);
 
-      for (const fileName of nextFiles) {
-        if (!merged.includes(fileName)) {
-          merged.push(fileName);
-        }
+  function handleFileSelect(event: ChangeEvent<HTMLInputElement>) {
+    const nextFiles = Array.from(event.target.files ?? []);
+    const acceptedFiles: File[] = [];
+    const acceptedItems: CreateUploadedFileItem[] = [];
+    const nextItems: CreateUploadedFileItem[] = [];
+
+    for (const file of nextFiles) {
+      const id = `${file.name}-${file.size}-${file.lastModified}-${crypto.randomUUID()}`;
+      if (file.size > MAX_CREATE_UPLOAD_SIZE_BYTES) {
+        nextItems.push({
+          id,
+          name: file.name,
+          size: file.size,
+          mimeType: file.type || "application/octet-stream",
+          status: "failed",
+          error: "单文件不能超过 20MB。",
+        });
+        continue;
       }
 
-      return merged;
-    });
+      acceptedFiles.push(file);
+      const acceptedItem: CreateUploadedFileItem = {
+        id,
+        name: file.name,
+        size: file.size,
+        mimeType: file.type || "application/octet-stream",
+        status: "uploading",
+        file,
+      };
+      acceptedItems.push(acceptedItem);
+      nextItems.push(acceptedItem);
+    }
+
+    setSelectedFiles((current) => [...current, ...nextItems]);
     event.target.value = "";
+
+    if (acceptedFiles.length === 0) {
+      return;
+    }
+
+    void uploadSelectedFiles(acceptedItems, acceptedFiles);
   }
 
-  function handleRemoveFile(fileName: string) {
-    setSelectedFiles((current) => current.filter((item) => item !== fileName));
+  function handleRemoveFile(fileId: string) {
+    setSelectedFiles((current) => current.filter((item) => item.id !== fileId));
   }
+
+  async function uploadSelectedFiles(items: CreateUploadedFileItem[], files: File[]) {
+    const itemIds = new Set(items.map((item) => item.id));
+    const uploaded = await onUploadFiles(files);
+    setSelectedFiles((current) =>
+      current.flatMap((file) => {
+        if (!itemIds.has(file.id)) {
+          return [file];
+        }
+        if (uploaded) {
+          return [];
+        }
+        return [
+          {
+            ...file,
+            status: "failed" as const,
+            error: "上传失败，请稍后重试。",
+          },
+        ];
+      }),
+    );
+  }
+
+  function handleRetryFile(file: CreateUploadedFileItem) {
+    if (!file.file || file.size > MAX_CREATE_UPLOAD_SIZE_BYTES) {
+      return;
+    }
+    setSelectedFiles((current) =>
+      current.map((item) =>
+        item.id === file.id
+          ? {
+              ...item,
+              status: "uploading",
+              error: undefined,
+            }
+          : item,
+      ),
+    );
+    void uploadSelectedFiles([file], [file.file]);
+  }
+
+  function handleSuggestionSelect(suggestion: string) {
+    setComposerText(suggestion);
+  }
+
+  async function handleSubmitMessage() {
+    const normalizedMessage = composerText.trim();
+    if (isConversationLocked || createSessionSending) {
+      return;
+    }
+
+    setComposerText("");
+    const sent = await onSendMessage(normalizedMessage);
+    if (!sent) {
+      setComposerText(normalizedMessage);
+    }
+  }
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void handleSubmitMessage();
+    }
+  }
+
+  const assistant_response = createSession?.assistant_response;
+  const sessionMessages = buildRenderableMessages(createSession?.messages ?? []);
+  const visibleMessages =
+    sessionMessages.length > 0
+      ? sessionMessages
+      : assistant_response?.message
+        ? [
+            {
+              id: `${createSession?.session_id ?? "session"}-assistant-response`,
+              role: "assistant" as const,
+              content: assistant_response.message,
+              payload: null,
+              attachments: [],
+              created_at: createSession?.updated_at ?? new Date(0).toISOString(),
+            },
+          ]
+        : [];
+  const lastVisibleMessage = visibleMessages.at(-1);
+  const shouldShowSuggestions = lastVisibleMessage?.role !== "user";
+  const isPendingAssistantReply =
+    createSessionSending ||
+    lastVisibleMessage?.payload?.optimistic === true ||
+    lastVisibleMessage?.content === "思考中...";
+  const suggestions =
+    assistant_response?.suggestions.length &&
+    !isConversationLocked &&
+    !isPendingAssistantReply &&
+    shouldShowSuggestions
+      ? assistant_response.suggestions
+      : [];
+  const card = assistant_response?.card ?? null;
+  const isCardLoading =
+    Boolean(card) &&
+    (createSessionPendingEventType === "chat" ||
+      createSessionPendingEventType === "regenerate" ||
+      createSessionPendingEventType === "confirm");
+  const boundFiles: CreateBoundFileItem[] =
+    createSession?.material_usage.assets.map((asset) => ({
+      id: asset.asset_id,
+      name: asset.filename,
+      size: asset.size_bytes,
+      mimeType: asset.mime_type,
+      status: "bound" as const,
+    })) ?? [];
+  const visibleFiles = [...boundFiles, ...selectedFiles];
+  const jobProgress = getJobProgressView(currentJobStatus, agentLogs);
+  const shouldShowGenerateEmptyState = !selectedTaskId && currentJobStatus === null;
+  const selectedTask = tasks.find((task) => task.job_id === selectedTaskId) ?? null;
+  const selectedTaskGameId = selectedTask?.game_id ?? null;
+  const isPublishingSelectedGame =
+    selectedTaskGameId !== null ? publishingGameId === selectedTaskGameId : false;
+
+  useEffect(() => {
+    const messageStream = messageStreamRef.current;
+    if (!messageStream) {
+      return;
+    }
+
+    const frameId = requestAnimationFrame(() => {
+      messageStream.scrollTop = messageStream.scrollHeight;
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [createSessionSending, selectedCreateSessionId, visibleMessages.length]);
 
   return (
     <main className="create-page create-layout" data-testid="create-workspace">
@@ -62,87 +582,164 @@ export function CreatePage({ tasks }: CreatePageProps) {
           </button>
           {tasksExpanded ? (
             <div className="tasks-list">
-              {tasks.map((task) => (
-                <article className="task-item" key={task.name}>
-                  <div className="task-head">
-                    <strong>{task.name}</strong>
-                    <span className={`badge ${task.status}`}>{task.status}</span>
-                  </div>
-                  <p>{task.summary}</p>
-                </article>
-              ))}
-              <button className="secondary-pill full-width">+ 新建任务</button>
+              {taskHistoryContent}
+              <button className="secondary-pill full-width" onClick={onCreateNewSession} type="button">
+                + 新建任务
+              </button>
             </div>
           ) : null}
         </div>
 
         <section className="conversation-shell">
-          <div className="conversation-head">
+          {/* <div className="conversation-head">
             <h1>和 Agent 一起定义你的游戏</h1>
             <p>先聊创意、玩法和目标，确认后再进入生成。</p>
-          </div>
+          </div> */}
+          <div className="conversation-scroll-shell">
+            <div className="message-stream" ref={messageStreamRef}>
+              {visibleMessages.map((message) => (
+                <article
+                  className={`message-row ${message.role === "user" ? "user" : "agent"}`}
+                  key={message.id}
+                >
+                  <span className="message-avatar">
+                    {message.role === "user" && currentUser?.avatar_url ? (
+                      <img
+                        className="message-avatar-image"
+                        src={currentUser.avatar_url}
+                        alt=""
+                        aria-hidden="true"
+                      />
+                    ) : message.role === "user" ? (
+                      <span className="message-avatar-default" aria-hidden="true">
+                        {getUserAvatarInitial(currentUser)}
+                      </span>
+                    ) : (
+                      "AI"
+                    )}
+                  </span>
+                  <div className="message-bubble">
+                    {message.content.trim().length > 0 ? (
+                      <div className="message-content">{message.content}</div>
+                    ) : null}
+                    {message.attachments.length > 0 ? (
+                      <div className="message-attachments">
+                        {message.attachments.map((attachment) => (
+                          <span className="message-attachment-chip" key={attachment.id}>
+                            {attachment.name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </article>
+              ))}
 
-          <div className="message-stream">
-            <article className="message-row agent">
-              <span className="message-avatar">AI</span>
-              <div className="message-bubble">
-                您好，今天想创建个什么样的游戏？
-              </div>
-            </article>
+              {suggestions.length > 0 ? (
+                <div className="suggestion-row" role="group" aria-label="建议答案">
+                  {suggestions.map((suggestion) => (
+                    <button
+                      className="suggestion-chip"
+                      disabled={isConversationLocked || createSessionSending}
+                      key={suggestion}
+                      onClick={() => handleSuggestionSelect(suggestion)}
+                      type="button"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
-            <article className="message-row suggestion-row">
-              <button className="suggestion-chip" type="button">
-                策略类
-              </button>
-              <button className="suggestion-chip" type="button">
-                射击类
-              </button>
-              <button className="suggestion-chip" type="button">
-                经营类
-              </button>
-            </article>
-
-            <article className="message-row system-note">
-              <p>
-                agent 和用户聊天过程中会不断提问澄清需求，并在每一轮返回里给出建议，最后生成游戏介绍卡片供用户确认。
-              </p>
-            </article>
-
-            <article className="message-row agent">
-              <span className="message-avatar">AI</span>
-              <div className="confirm-card">
-                <h2>最终确认卡片</h2>
-                <ul>
-                  <li>游戏类型：策略类塔防</li>
-                  <li>核心玩法：布置炮塔并抵挡成群敌人</li>
-                  <li>胜利条件：守住基地并完成 5 波进攻</li>
-                </ul>
-              </div>
-            </article>
+              {card ? (
+                <article className="message-row agent">
+                  <span className="message-avatar">AI</span>
+                  <div className={`confirm-card ${isCardLoading ? "loading" : ""}`}>
+                    {isCardLoading ? <div className="confirm-card-status">生成中...</div> : null}
+                    <h2>{card.title}</h2>
+                    <p>{card.introduction}</p>
+                    <div className="confirm-card-actions">
+                      <button
+                        className="primary-pill"
+                        disabled={isConversationLocked || createSessionSending}
+                        onClick={() => void onConfirmCard()}
+                        type="button"
+                      >
+                        确认
+                      </button>
+                      <button
+                        className="secondary-pill"
+                        disabled={isConversationLocked || createSessionSending}
+                        onClick={() => void onRegenerateCard()}
+                        type="button"
+                      >
+                        重新生成
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              ) : null}
+            </div>
           </div>
 
           <div className="composer-shell">
-            {selectedFiles.length > 0 ? (
+            {visibleFiles.length > 0 ? (
               <div className="selected-files">
-                {selectedFiles.map((fileName) => (
-                  <span className="selected-file-chip" key={fileName}>
-                    <span className="selected-file-name">{fileName}</span>
-                    <button
-                      aria-label={`删除附件 ${fileName}`}
-                      className="remove-file-button"
-                      onClick={() => handleRemoveFile(fileName)}
-                      type="button"
-                    >
-                      x
-                    </button>
+                {visibleFiles.map((file) => (
+                  <span className={`selected-file-chip ${file.status}`} key={file.id}>
+                    <span className="selected-file-name">{file.name}</span>
+                    <span className="selected-file-status">
+                      {file.status === "uploading" ? "上传中" : file.status === "failed" ? "上传失败" : "已绑定"}
+                    </span>
+                    {file.error ? <span className="selected-file-error">{file.error}</span> : null}
+                    {file.status === "bound" ? (
+                      <button
+                        aria-label={`删除附件 ${file.name}`}
+                        className="remove-file-button"
+                        disabled={isConversationLocked || createSessionSending}
+                        onClick={() => void onRemoveBoundFile(file.id)}
+                        type="button"
+                      >
+                        x
+                      </button>
+                    ) : (
+                      <>
+                        {file.status === "failed" && file.file ? (
+                          <button
+                            className="retry-file-button"
+                            disabled={isConversationLocked || createSessionSending}
+                            onClick={() => handleRetryFile(file)}
+                            type="button"
+                          >
+                            重试
+                          </button>
+                        ) : null}
+                        <button
+                          aria-label={`删除附件 ${file.name}`}
+                          className="remove-file-button"
+                          disabled={isConversationLocked}
+                          onClick={() => handleRemoveFile(file.id)}
+                          type="button"
+                        >
+                          x
+                        </button>
+                      </>
+                    )}
                   </span>
                 ))}
               </div>
             ) : null}
             <div className="composer-input-wrap">
-              <textarea placeholder="placeholder：创建 agent 给的随机游戏描述建议" />
+              <textarea
+                disabled={isConversationLocked || createSessionSending}
+                onChange={(event) => setComposerText(event.target.value)}
+                onKeyDown={handleComposerKeyDown}
+                placeholder=""
+                value={composerText}
+              />
               <input
                 className="sr-only"
+                disabled={isConversationLocked}
                 onChange={handleFileSelect}
                 ref={fileInputRef}
                 type="file"
@@ -151,14 +748,20 @@ export function CreatePage({ tasks }: CreatePageProps) {
               <div className="composer-floating-actions">
                 <button
                   className="icon-button"
+                  disabled={isConversationLocked || createSessionSending}
                   aria-label="附件"
                   onClick={() => fileInputRef.current?.click()}
                   type="button"
                 >
                   📎
                 </button>
-                <button className="primary-pill" type="button">
-                  发送
+                <button
+                  className="primary-pill"
+                  disabled={isConversationLocked || createSessionSending}
+                  onClick={() => void handleSubmitMessage()}
+                  type="button"
+                >
+                  {createSessionSending ? "发送中" : "发送"}
                 </button>
               </div>
             </div>
@@ -167,39 +770,92 @@ export function CreatePage({ tasks }: CreatePageProps) {
       </aside>
 
       <section className="workspace-stage">
-        <div className="generate-panel">
-          <div className="workspace-head">
-            <h1>生成游戏显示面板</h1>
-            <p>这里展示当前任务状态、预览结果和 Agent 执行进度。</p>
-          </div>
-          <div className="preview-frame">
-            <span>Playable Preview</span>
-          </div>
-          <div className="progress-row">
-            <span>生成过程中</span>
-            <div className="progress-track">
-              <div className="progress-fill" />
+        <div
+          className={`generate-panel ${shouldShowGenerateEmptyState ? "empty" : currentJobStatus === "succeeded" ? "succeeded" : "in-progress"}`}
+        >
+          {shouldShowGenerateEmptyState ? (
+            <div className="generate-panel-empty-state">
+              还没有开始生成游戏？去和AI聊聊想要生成什么样的游戏吧！
             </div>
-            <span>74%</span>
-          </div>
-          <div className="agent-log">
-            <div>
-              <span>分析创意</span>
-              <span className="badge succeeded">done</span>
-            </div>
-            <div>
-              <span>生成游戏文件</span>
-              <span className="badge running">running</span>
-            </div>
-            <div>
-              <span>上传产物</span>
-              <span className="badge">pending</span>
-            </div>
-          </div>
-          <div className="action-row">
-            <button className="primary-pill">Publish</button>
-            <button className="secondary-pill">Retry</button>
-          </div>
+          ) : currentJobStatus === "succeeded" ? (
+            <>
+              <div className="workspace-head">
+                {/* <h1>生成游戏显示面板</h1> */}
+                {/* <p>这里展示当前任务状态、预览结果和 Agent 执行进度。</p> */}
+              </div>
+              <div className="preview-frame preview-sandbox" aria-label="游戏沙盒区域" />
+              <div className="action-row">
+                <button
+                  className="primary-pill"
+                  disabled={!selectedTask?.game_id || isPublishingSelectedGame}
+                  onClick={() =>
+                    void (selectedTask ? onPublishGame(selectedTask) : Promise.resolve(false))
+                  }
+                  type="button"
+                >
+                  {isPublishingSelectedGame ? "发布中" : "发布"}
+                </button>
+                <button
+                  className="secondary-pill"
+                  disabled={createSessionSending}
+                  onClick={() => void onRedoGeneratedGame()}
+                  type="button"
+                >
+                  {createSessionPendingEventType === "redo" && createSessionSending ? "重做中" : "重做"}
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="workspace-head">
+                {/* <h1>生成游戏显示面板</h1> */}
+                {/* <p>这里展示当前任务状态、预览结果和 Agent 执行进度。</p> */}
+              </div>
+              <div className="agent-status-scroll">
+                <div className="agent-log">
+                  {jobProgress.steps.map((step) => (
+                    <div key={step.label}>
+                      <span>{step.label}</span>
+                      <span className={`badge ${step.status}`}>{step.status}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="progress-row">
+                <span>{jobProgress.label}</span>
+                <div className="progress-track" aria-hidden="true">
+                  <div className="progress-fill" style={{ width: `${jobProgress.percent}%` }} />
+                </div>
+                <span>{jobProgress.percent}%</span>
+              </div>
+              <section className="agent-log-stream" aria-label="Agent 执行日志">
+                <div className="agent-log-stream-head">
+                  <strong>Agent 执行日志</strong>
+                  <span>{agentLogs.length} 条</span>
+                </div>
+                {agentLogsError ? (
+                  <p className="agent-log-empty">{agentLogsError.message}</p>
+                ) : agentLogs.length === 0 ? (
+                  <p className="agent-log-empty">等待 Agent 日志</p>
+                ) : (
+                  agentLogs.map((log, index) => (
+                    <article
+                      className={`agent-log-entry ${log.level}`}
+                      key={`${log.step}-${log.created_at}-${index}`}
+                    >
+                      <div className="agent-log-meta">
+                        <span>{log.step}</span>
+                        <span className={`badge ${log.level === "error" ? "failed" : log.level}`}>
+                          {log.level}
+                        </span>
+                      </div>
+                      <p>{log.message}</p>
+                    </article>
+                  ))
+                )}
+              </section>
+            </>
+          )}
         </div>
       </section>
     </main>

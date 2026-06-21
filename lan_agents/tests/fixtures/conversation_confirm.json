@@ -1,0 +1,23 @@
+{
+  "game_plan": {
+    "plan_id": "plan-fixture",
+    "title": "星星小猫",
+    "introduction": "帮助小猫收集星星",
+    "tags": ["arcade", "casual"],
+    "gameplay": "躲避障碍并收集星星",
+    "core_loop": ["移动", "躲避", "收集"],
+    "style": "可爱卡通",
+    "characters": ["小猫"],
+    "win_condition": "收集10颗星星",
+    "lose_condition": "撞到滚石",
+    "controls": "方向键移动",
+    "suggestions": [],
+    "confidence": "medium"
+  },
+  "material_usage": {
+    "assets": []
+  },
+  "user_event": {
+    "type": "confirm"
+  }
+}

@@ -1,11 +1,28 @@
 import type { AuthUser } from "../api/auth";
+import type { CreateSessionEventRequest, CreateSessionState } from "../api/create-sessions";
 import { patchLikedGame, toUiGame, type RawGame } from "../lib/games";
 import type { Game, GameSortParam } from "../types/ui";
 
 export type MockTask = {
-  name: string;
-  status: string;
-  summary: string;
+  job_id: string;
+  session_id: string | null;
+  parent_job_id: string | null;
+  title: string;
+  status: "pending" | "running" | "succeeded" | "failed";
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  game_id: string | null;
+  result_summary: string | null;
+  error_message: string | null;
+  validation_report: Record<string, unknown> | null;
+};
+
+export type MockAgentLog = {
+  step: string;
+  level: "info" | "warning" | "error";
+  message: string;
+  created_at: string;
 };
 
 export type MockAuthStore = {
@@ -149,6 +166,101 @@ const mockGameSeed = [
 
 let mockGameStore = mockGameSeed.map(toUiGame);
 
+export const mockCreateSessions: Record<string, CreateSessionState> = {
+  "mock-session-1": {
+    session_id: "mock-session-1",
+    conversation_status: "confirmed",
+    user_requirements: {
+      intent_summary: "做一个星际躲避游戏",
+      must_have: ["躲避陨石", "收集星尘"],
+    },
+    game_plan: {
+      plan_id: "mock-plan-1",
+      title: "星际躲避",
+      introduction: "驾驶飞船穿过陨石带，收集星尘并坚持到终点。",
+      tags: ["街机", "动作"],
+    },
+    material_usage: { assets: [] },
+    assistant_response: {
+      message: "方案已确认，正在生成游戏。",
+      suggestions: [],
+      card: {
+        plan_id: "mock-plan-1",
+        title: "星际躲避",
+        introduction: "驾驶飞船穿过陨石带，收集星尘并坚持到终点。",
+        tags: ["街机", "动作"],
+      },
+      actions: ["generate"],
+    },
+    messages: [
+      {
+        id: "mock-message-1",
+        role: "user",
+        content: "我想做一个星际躲避游戏",
+        payload: null,
+        created_at: "2026-06-20T07:58:00.000Z",
+      },
+      {
+        id: "mock-message-2",
+        role: "assistant",
+        content: "我整理成一版星际躲避方案，可以直接生成。",
+        payload: {
+          suggestions: [],
+        },
+        created_at: "2026-06-20T07:59:00.000Z",
+      },
+    ],
+    created_at: "2026-06-20T07:58:00.000Z",
+    updated_at: "2026-06-20T08:00:00.000Z",
+  },
+  "mock-session-2": {
+    session_id: "mock-session-2",
+    conversation_status: "confirmed",
+    user_requirements: {
+      intent_summary: "做一个森林冒险游戏",
+      must_have: ["探索森林", "寻找出口"],
+    },
+    game_plan: {
+      plan_id: "mock-plan-2",
+      title: "森林冒险",
+      introduction: "在森林里探索路径，避开陷阱并找到发光出口。",
+      tags: ["冒险", "解谜"],
+    },
+    material_usage: { assets: [] },
+    assistant_response: {
+      message: "这版森林冒险已经生成，可以继续修改。",
+      suggestions: [],
+      card: {
+        plan_id: "mock-plan-2",
+        title: "森林冒险",
+        introduction: "在森林里探索路径，避开陷阱并找到发光出口。",
+        tags: ["冒险", "解谜"],
+      },
+      actions: ["revise"],
+    },
+    messages: [
+      {
+        id: "mock-message-3",
+        role: "user",
+        content: "做一个森林冒险",
+        payload: null,
+        created_at: "2026-06-19T17:58:00.000Z",
+      },
+      {
+        id: "mock-message-4",
+        role: "assistant",
+        content: "森林冒险已经生成好了，你可以继续说想怎么改。",
+        payload: {
+          suggestions: [],
+        },
+        created_at: "2026-06-19T18:03:00.000Z",
+      },
+    ],
+    created_at: "2026-06-19T17:58:00.000Z",
+    updated_at: "2026-06-19T18:03:00.000Z",
+  },
+};
+
 function createMockIframeDocument(title: string, description: string): string {
   const html = `<!doctype html>
 <html lang="en">
@@ -212,11 +324,360 @@ function createMockIframeDocument(title: string, description: string): string {
 export const mockRuntime = {
   games: mockGameStore,
   tasks: [
-    { name: "星际躲避", status: "running", summary: "正在生成游戏面板与素材。" },
-    { name: "森林冒险", status: "succeeded", summary: "draft game ready。" },
-    { name: "像素竞速", status: "pending", summary: "等待执行。" },
+    {
+      job_id: "mock-job-1",
+      session_id: "mock-session-1",
+      parent_job_id: null,
+      title: "星际躲避",
+      status: "running",
+      created_at: "2026-06-20T08:00:00.000Z",
+      started_at: "2026-06-20T08:01:00.000Z",
+      finished_at: null,
+      game_id: null,
+      result_summary: "正在生成游戏面板与素材。",
+      error_message: null,
+      validation_report: null,
+    },
+    {
+      job_id: "mock-job-2",
+      session_id: "mock-session-2",
+      parent_job_id: null,
+      title: "森林冒险",
+      status: "succeeded",
+      created_at: "2026-06-19T18:00:00.000Z",
+      started_at: "2026-06-19T18:01:00.000Z",
+      finished_at: "2026-06-19T18:03:00.000Z",
+      game_id: "mock-draft-1",
+      result_summary: "draft game ready。",
+      error_message: null,
+      validation_report: null,
+    },
+    {
+      job_id: "mock-job-3",
+      session_id: null,
+      parent_job_id: null,
+      title: "像素竞速",
+      status: "pending",
+      created_at: "2026-06-20T09:15:00.000Z",
+      started_at: null,
+      finished_at: null,
+      game_id: null,
+      result_summary: "等待执行。",
+      error_message: null,
+      validation_report: null,
+    },
   ] satisfies MockTask[],
 };
+
+export function listMockJobs(): { jobs: MockTask[] } {
+  return {
+    jobs: [...mockRuntime.tasks].sort(
+      (taskA, taskB) =>
+        new Date(taskB.created_at).getTime() - new Date(taskA.created_at).getTime(),
+    ),
+  };
+}
+
+export function getMockJob(jobId: string): MockTask | null {
+  return mockRuntime.tasks.find((task) => task.job_id === jobId) ?? null;
+}
+
+export function getMockJobLogs(jobId: string): { logs: MockAgentLog[] } {
+  const task = getMockJob(jobId);
+  if (!task) {
+    return { logs: [] };
+  }
+
+  const createdAt = new Date(task.created_at).getTime();
+  const logs: MockAgentLog[] = [
+    {
+      step: "orchestrator",
+      level: "info",
+      message: "Orchestrator 正在分析游戏方案和素材需求。",
+      created_at: new Date(createdAt + 1000).toISOString(),
+    },
+  ];
+
+  if (task.status !== "pending") {
+    logs.push({
+      step: "coding_agent",
+      level: "info",
+      message: "Coding Agent 正在生成 HTML5 游戏文件。",
+      created_at: new Date(createdAt + 2000).toISOString(),
+    });
+  }
+
+  if (task.status === "succeeded") {
+    logs.push({
+      step: "validator_agent",
+      level: "info",
+      message: "Validator Agent 已通过 manifest 和资源引用检查。",
+      created_at: new Date(createdAt + 3000).toISOString(),
+    });
+  }
+
+  if (task.status === "failed") {
+    logs.push({
+      step: "agent_runner",
+      level: "error",
+      message: task.error_message ?? "Agent 生成失败。",
+      created_at: new Date(createdAt + 3000).toISOString(),
+    });
+  }
+
+  return { logs };
+}
+
+export function createMockCreateSession(): CreateSessionState {
+  const now = new Date().toISOString();
+  const sessionId = `mock-session-${Object.keys(mockCreateSessions).length + 1}`;
+  const session: CreateSessionState = {
+    session_id: sessionId,
+    conversation_status: "collecting",
+    user_requirements: {},
+    game_plan: null,
+    material_usage: { assets: [] },
+    assistant_response: {
+      message: "您好，今天想创建个什么样的游戏？",
+      suggestions: [],
+      card: null,
+      actions: [],
+    },
+    messages: [
+      {
+        id: `${sessionId}-welcome`,
+        role: "assistant",
+        content: "您好，今天想创建个什么样的游戏？",
+        payload: {
+          suggestions: [],
+        },
+        created_at: now,
+      },
+    ],
+    created_at: now,
+    updated_at: now,
+  };
+
+  mockCreateSessions[sessionId] = session;
+  return session;
+}
+
+export function getMockCreateSession(sessionId: string): CreateSessionState | null {
+  return mockCreateSessions[sessionId] ?? null;
+}
+
+export function sendMockCreateSessionEvent(
+  sessionId: string,
+  event: CreateSessionEventRequest,
+): CreateSessionState {
+  const session = mockCreateSessions[sessionId];
+  if (!session) {
+    throw new Error("未找到当前 Create 会话。");
+  }
+
+  if (event.type === "chat" && !event.message?.trim()) {
+    return session;
+  }
+
+  if (event.type === "upload_assets") {
+    const now = new Date().toISOString();
+    const uploadedAssets = event.uploaded_assets ?? [];
+    const nextAssets = event.replace_existing_assets
+      ? uploadedAssets
+      : [...session.material_usage.assets, ...uploadedAssets];
+    const nextSession: CreateSessionState = {
+      ...session,
+      material_usage: {
+        assets: nextAssets,
+      },
+      assistant_response: {
+        ...session.assistant_response,
+        message:
+          uploadedAssets.length > 0
+            ? `已绑定 ${uploadedAssets.length} 个素材，我会把它们纳入游戏方案。`
+            : "已更新素材列表。",
+      },
+      messages: [
+        ...session.messages,
+        {
+          id: `${sessionId}-upload-${session.messages.length + 1}`,
+          role: "system",
+          content:
+            uploadedAssets.length > 0
+              ? `已上传素材：${uploadedAssets.map((asset) => asset.filename).join("、")}`
+              : "已清空素材列表。",
+          payload: {
+            event_type: "upload_assets",
+            assets: uploadedAssets.map((asset) => ({
+              asset_id: asset.asset_id,
+              filename: asset.filename,
+              mime_type: asset.mime_type,
+              size_bytes: asset.size_bytes,
+            })),
+            replace_existing_assets: event.replace_existing_assets ?? false,
+          },
+          created_at: now,
+        },
+      ],
+      updated_at: now,
+    };
+
+    mockCreateSessions[sessionId] = nextSession;
+    return nextSession;
+  }
+
+  if (event.type === "regenerate") {
+    const now = new Date().toISOString();
+    const currentCard =
+      session.assistant_response.card ??
+      ({
+        plan_id: (session.game_plan as { plan_id?: string } | null)?.plan_id ?? "mock-plan",
+        title: (session.game_plan as { title?: string } | null)?.title ?? "新方案",
+        introduction:
+          (session.game_plan as { introduction?: string } | null)?.introduction ??
+          "换一版新的创意方向。",
+        tags: ((session.game_plan as { tags?: string[] } | null)?.tags ?? []).slice(0, 3),
+      } satisfies NonNullable<CreateSessionState["assistant_response"]["card"]>);
+    const regenerateCount =
+      session.messages.filter(
+        (message) => message.payload?.event_type === "regenerate",
+      ).length + 1;
+    const variantLabel = `新编 ${regenerateCount}`;
+    const nextCard = {
+      ...currentCard,
+      plan_id: `${currentCard.plan_id}-regen-${session.messages.length + 1}`,
+      title: `${currentCard.title.replace(/\s+新编\s+\d+$/u, "")} ${variantLabel}`,
+      introduction: `这次我保留核心玩法，但切成了第 ${regenerateCount} 版更轻快的节奏表达。`,
+    };
+    const assistantMessage = "我帮你换了一版方案，你看看这次是否更合适。";
+    const nextSession: CreateSessionState = {
+      ...session,
+      conversation_status: "ready_to_confirm",
+      game_plan: {
+        ...(session.game_plan ?? {}),
+        plan_id: nextCard.plan_id,
+        title: nextCard.title,
+        introduction: nextCard.introduction,
+        tags: nextCard.tags,
+      },
+      assistant_response: {
+        message: assistantMessage,
+        suggestions: [],
+        card: nextCard,
+        actions: ["regenerate", "confirm"],
+      },
+      messages: [
+        ...session.messages,
+        {
+          id: `${sessionId}-regenerate-${session.messages.length + 1}`,
+          role: "assistant",
+          content: assistantMessage,
+          payload: {
+            event_type: "regenerate",
+            card: nextCard,
+            suggestions: [],
+          },
+          created_at: now,
+        },
+      ],
+      updated_at: now,
+    };
+
+    mockCreateSessions[sessionId] = nextSession;
+    return nextSession;
+  }
+
+  if (event.type === "confirm") {
+    const now = new Date().toISOString();
+    const currentCard =
+      session.assistant_response.card ??
+      ({
+        plan_id: (session.game_plan as { plan_id?: string } | null)?.plan_id ?? "mock-plan",
+        title: (session.game_plan as { title?: string } | null)?.title ?? "新方案",
+        introduction:
+          (session.game_plan as { introduction?: string } | null)?.introduction ??
+          "根据当前方向生成一版游戏方案。",
+        tags: ((session.game_plan as { tags?: string[] } | null)?.tags ?? []).slice(0, 3),
+      } satisfies NonNullable<CreateSessionState["assistant_response"]["card"]>);
+    const assistantMessage = "方案已确认，正在为你创建生成任务。";
+    const nextSession: CreateSessionState = {
+      ...session,
+      conversation_status: "confirmed",
+      game_plan: {
+        ...(session.game_plan ?? {}),
+        plan_id: currentCard.plan_id,
+        title: currentCard.title,
+        introduction: currentCard.introduction,
+        tags: currentCard.tags,
+      },
+      assistant_response: {
+        message: assistantMessage,
+        suggestions: [],
+        card: currentCard,
+        actions: ["generate"],
+      },
+      messages: [
+        ...session.messages,
+        {
+          id: `${sessionId}-confirm-${session.messages.length + 1}`,
+          role: "assistant",
+          content: assistantMessage,
+          payload: {
+            event_type: "confirm",
+            card: currentCard,
+            suggestions: [],
+          },
+          created_at: now,
+        },
+      ],
+      handoff_to_generation: true,
+      updated_at: now,
+    };
+
+    mockCreateSessions[sessionId] = nextSession;
+    return nextSession;
+  }
+
+  if (event.type !== "chat") {
+    return session;
+  }
+
+  const now = new Date().toISOString();
+  const normalizedMessage = event.message?.trim() ?? "";
+  const assistantMessage = `收到：${normalizedMessage}。我会继续帮你收敛游戏方案。`;
+  const nextSession: CreateSessionState = {
+    ...session,
+    assistant_response: {
+      message: assistantMessage,
+      suggestions: [],
+      card: session.assistant_response.card,
+      actions: session.assistant_response.actions,
+    },
+    messages: [
+      ...session.messages,
+      {
+        id: `${sessionId}-user-${session.messages.length + 1}`,
+        role: "user",
+        content: normalizedMessage,
+        payload: null,
+        created_at: now,
+      },
+      {
+        id: `${sessionId}-assistant-${session.messages.length + 2}`,
+        role: "assistant",
+        content: assistantMessage,
+        payload: {
+          suggestions: [],
+        },
+        created_at: now,
+      },
+    ],
+    updated_at: now,
+  };
+
+  mockCreateSessions[sessionId] = nextSession;
+  return nextSession;
+}
 
 export function isMockEnabled(): boolean {
   return (import.meta.env.VITE_ENABLE_MOCK_API ?? "false") === "true";

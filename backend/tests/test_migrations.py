@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import CheckConstraint, UniqueConstraint
 
 from app.models import Base
 
@@ -31,6 +31,13 @@ def unique_constraint_names(table_name: str) -> set[str]:
         for constraint in table(table_name).constraints
         if isinstance(constraint, UniqueConstraint)
     }
+
+
+def check_constraint_sql(table_name: str, constraint_name: str) -> str:
+    for constraint in table(table_name).constraints:
+        if isinstance(constraint, CheckConstraint) and constraint.name == constraint_name:
+            return str(constraint.sqltext)
+    raise AssertionError(f"Missing check constraint {constraint_name}")
 
 
 def test_games_table_has_required_columns_and_indexes():
@@ -78,6 +85,13 @@ def test_generation_jobs_table_has_required_columns_and_indexes():
         "user_id",
         "prompt",
         "confirmation",
+        "create_session_id",
+        "parent_job_id",
+        "revision_intent",
+        "user_requirements",
+        "game_plan",
+        "material_usage",
+        "validation_report",
         "status",
         "game_id",
         "artifact_prefix",
@@ -92,8 +106,18 @@ def test_generation_jobs_table_has_required_columns_and_indexes():
         "ix_generation_jobs_user_id",
         "ix_generation_jobs_status",
         "ix_generation_jobs_created_at",
+        "ix_generation_jobs_create_session_id",
+        "ix_generation_jobs_parent_job_id",
     }.issubset(index_names("generation_jobs"))
     assert table("generation_jobs").c.user_id.foreign_keys
+    assert table("generation_jobs").c.create_session_id.nullable is True
+    assert table("generation_jobs").c.create_session_id.foreign_keys
+    create_session_fk = next(iter(table("generation_jobs").c.create_session_id.foreign_keys))
+    assert create_session_fk.target_fullname == "create_sessions.id"
+    assert table("generation_jobs").c.parent_job_id.nullable is True
+    assert table("generation_jobs").c.parent_job_id.foreign_keys
+    parent_job_fk = next(iter(table("generation_jobs").c.parent_job_id.foreign_keys))
+    assert parent_job_fk.target_fullname == "generation_jobs.id"
     assert table("generation_jobs").c.game_id.nullable is True
     assert table("generation_jobs").c.status.default.arg == "pending"
 
@@ -119,6 +143,74 @@ def test_uploaded_assets_table_allows_unbound_job():
         "ix_uploaded_assets_job_id",
         "ix_uploaded_assets_created_at",
     }.issubset(index_names("uploaded_assets"))
+
+
+def test_uploaded_assets_session_binding_column_allows_create_session_binding():
+    assert "uploaded_assets" in Base.metadata.tables
+    assert "session_id" in column_names("uploaded_assets")
+    assert table("uploaded_assets").c.session_id.nullable is True
+    assert table("uploaded_assets").c.session_id.foreign_keys
+    session_id_fk = next(iter(table("uploaded_assets").c.session_id.foreign_keys))
+    assert session_id_fk.target_fullname == "create_sessions.id"
+    assert "ix_uploaded_assets_session_id" in index_names("uploaded_assets")
+
+
+def test_create_sessions_table_has_required_columns_constraints_and_indexes():
+    assert "create_sessions" in Base.metadata.tables
+    assert {
+        "id",
+        "user_id",
+        "status",
+        "user_requirements",
+        "game_plan",
+        "material_usage",
+        "assistant_response",
+        "created_at",
+        "updated_at",
+        "confirmed_at",
+    }.issubset(column_names("create_sessions"))
+    assert {
+        "ix_create_sessions_user_id",
+        "ix_create_sessions_status",
+        "ix_create_sessions_created_at",
+        "ix_create_sessions_updated_at",
+    }.issubset(index_names("create_sessions"))
+    assert table("create_sessions").c.user_id.foreign_keys
+    user_id_fk = next(iter(table("create_sessions").c.user_id.foreign_keys))
+    assert user_id_fk.target_fullname == "users.user_id"
+    assert table("create_sessions").c.status.default.arg == "collecting"
+    assert table("create_sessions").c.confirmed_at.nullable is True
+    status_check = check_constraint_sql(
+        "create_sessions", "ck_create_sessions_status"
+    )
+    for status in ("collecting", "ready_to_confirm", "confirmed", "error"):
+        assert status in status_check
+
+
+def test_create_session_messages_table_has_required_shape():
+    assert "create_session_messages" in Base.metadata.tables
+    assert {
+        "id",
+        "session_id",
+        "role",
+        "content",
+        "payload",
+        "created_at",
+    }.issubset(column_names("create_session_messages"))
+    assert table("create_session_messages").c.session_id.foreign_keys
+    session_id_fk = next(
+        iter(table("create_session_messages").c.session_id.foreign_keys)
+    )
+    assert session_id_fk.target_fullname == "create_sessions.id"
+    role_check = check_constraint_sql(
+        "create_session_messages", "ck_create_session_messages_role"
+    )
+    for role in ("user", "assistant", "system"):
+        assert role in role_check
+    assert {
+        "ix_create_session_messages_session_id",
+        "ix_create_session_messages_created_at",
+    }.issubset(index_names("create_session_messages"))
 
 
 def test_agent_logs_and_play_events_tables_have_required_shape():
@@ -154,6 +246,8 @@ def test_agent_logs_and_play_events_tables_have_required_shape():
         "games",
         "game_likes",
         "generation_jobs",
+        "create_sessions",
+        "create_session_messages",
         "uploaded_assets",
         "agent_logs",
         "play_events",
@@ -169,3 +263,23 @@ def test_alembic_upgrade_sql_creates_business_tables(table_name: str):
     )
 
     assert f"CREATE TABLE {table_name}" in result.stdout
+
+
+def test_alembic_upgrade_sql_repairs_generation_jobs_session_snapshot_columns():
+    result = subprocess.run(
+        ["../.venv/bin/alembic", "upgrade", "head", "--sql"],
+        cwd=BACKEND_DIR,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "0004_repair_job_snapshots" in result.stdout
+    assert "ADD COLUMN create_session_id" in result.stdout
+    assert "ADD COLUMN parent_job_id" in result.stdout
+    assert "ADD COLUMN revision_intent" in result.stdout
+    assert "ADD COLUMN user_requirements" in result.stdout
+    assert "ADD COLUMN game_plan" in result.stdout
+    assert "ADD COLUMN material_usage" in result.stdout
+    assert "ix_generation_jobs_create_session_id" in result.stdout
+    assert "ix_generation_jobs_parent_job_id" in result.stdout

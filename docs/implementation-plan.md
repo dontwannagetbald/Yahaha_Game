@@ -60,7 +60,7 @@
 - 前端路由和 API 客户端。
 - 全局导航和 Auth Modal。
 - Home 游戏流、搜索、标签筛选、排序、点赞交互。
-- Create 页面三栏布局、文件上传、最终确认卡片、任务历史、Agent 日志展示、试玩和发布。
+- Create 页面三栏布局、Create Session 对话阶段、建议答案、文件上传与素材绑定、游戏卡片、任务历史、任务与会话联动、生成后 revision 入口、Agent 日志展示、试玩和发布。
 - Play meta / manifest / iframe 加载、sandbox 边界、timeout、Play Events、Console 输出。
 
 可独立运行策略：
@@ -76,6 +76,7 @@
 负责范围：
 
 - Agent 执行器稳定边界。
+- 生成后修改 revision graph 或 revision mode 最小契约。
 - Mock provider。
 - OpenAI-compatible provider 适配。
 - 静态游戏产物校验和打包。
@@ -90,7 +91,7 @@
 
 ## 4. 最终接线顺序
 
-1. Backend 完成 Auth 既有能力、Backend Step 1 至 Step 7 后，Frontend 可以从 mock 切换到真实 Auth / Games / Uploads / Jobs / Play Events API。
+1. Backend 完成 Auth 既有能力、Backend Step 1 至 Step 7 后，Frontend 可以从 mock 切换到真实 Auth / Games / Uploads / Create Sessions / Jobs / Play Events API。
 2. Agent 完成 Agent Step 1 后，Backend Step 8 可以用真实执行器替换 fake runner。
 3. Agent 完成 Agent Step 2 或 Step 3 后，Backend 可以生成真实 draft game。
 4. Backend 完成 Backend Step 9 后，Frontend Create 的 Publish 能从 draft 发布到 Home。
@@ -132,10 +133,14 @@
 - [ ] 登录用户进入 Create。
 - [ ] 上传至少一个文件。
 - [ ] 输入自然语言创意。
-- [ ] 编辑最终确认卡片。
-- [ ] 创建生成任务。
+- [ ] 点击建议答案或继续聊天补充需求。
+- [ ] 在 `ready_to_confirm` 状态下查看游戏卡片。
+- [ ] 可选点击 `换一换` 重新生成另一版方案。
+- [ ] 点击 `生成`，先 `confirm` 当前 `create_session`，再基于 confirmed `session_id` 创建生成任务。
+- [ ] 任务历史中的任务项返回 `session_id`，点击历史任务能恢复对应对话上下文。
 - [ ] 等待任务 succeeded。
 - [ ] 在生成面板试玩 draft。
+- [ ] 可选在聊天区提出明确修改，创建新的 revision job，不覆盖旧 draft。
 - [ ] 点击 Publish。
 - [ ] 发布成功后跳转 Home。
 - [ ] Home 新增刚发布游戏。

@@ -1,0 +1,83 @@
+{
+  "generation_status": "succeeded",
+  "status": "succeeded",
+  "workspace": "/Users/root1/workspace/Yahaha_Game/Yahaha_Game/lan_agents/output/real-generation-step8-image-smoke",
+  "manifest_paths": [
+    "assets/background.png",
+    "assets/player.png",
+    "assets/cover.png"
+  ],
+  "processed_paths": [
+    "assets/background.png",
+    "assets/player.png",
+    "assets/cover.png"
+  ],
+  "referenced_asset_paths": [
+    "assets/background.png",
+    "assets/player.png"
+  ],
+  "manifest_assets": [
+    "assets/background.png",
+    "assets/player.png"
+  ],
+  "manifest_cover": "assets/cover.png",
+  "files_exist": {
+    "index": true,
+    "style": true,
+    "script": true,
+    "manifest": true,
+    "manifest_draft": true,
+    "background": true,
+    "player": true,
+    "cover": true
+  },
+  "processed_asset_sources": {
+    "assets/background.png": "image_model",
+    "assets/player.png": "image_model",
+    "assets/cover.png": "image_model"
+  },
+  "runtime_passed": true,
+  "asset_check_passed": true,
+  "unresolved_issues": [],
+  "debug_report": {
+    "attempted": true,
+    "runtime_check": {
+      "mode": "static-node-fallback",
+      "entry_exists": true,
+      "game_js_exists": true,
+      "html_has_canvas": true,
+      "html_references_game_js": true,
+      "node_available": true,
+      "js_syntax_ok": true,
+      "syntax_error": "",
+      "game_ready_signal_found": true,
+      "render_signal_found": true,
+      "passed": true
+    },
+    "asset_reference_check": {
+      "passed": true,
+      "referenced_asset_paths": [
+        "assets/background.png",
+        "assets/player.png"
+      ],
+      "manifest_asset_paths": [
+        "assets/background.png",
+        "assets/player.png"
+      ],
+      "available_asset_paths": [
+        "assets/background.png",
+        "assets/cover.png",
+        "assets/player.png"
+      ],
+      "missing_asset_paths": [],
+      "manifest_missing_from_code": [],
+      "code_missing_from_manifest": [],
+      "issues": []
+    },
+    "fixed_issues": [],
+    "unresolved_issues": [],
+    "notes": []
+  },
+  "validation_valid": true,
+  "artifact_manifest_path": "/Users/root1/workspace/Yahaha_Game/Yahaha_Game/lan_agents/output/real-generation-step8-image-smoke/manifest.json"
+}

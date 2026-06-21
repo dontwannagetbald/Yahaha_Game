@@ -69,3 +69,15 @@ export async function likePublishedGame(gameId: string): Promise<LikeResponse> {
 
   return response;
 }
+
+export async function publishGame(gameId: string): Promise<Game> {
+  const response = await requestJson<GameDetailResponse>(`/api/games/${gameId}/publish`, {
+    method: "POST",
+  });
+
+  if (!response) {
+    throw new Error("Publish response is empty.");
+  }
+
+  return toUiGame(response);
+}

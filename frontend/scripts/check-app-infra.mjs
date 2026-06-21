@@ -33,7 +33,7 @@ const expectations = [
   [contents.app, 'const logoutErrorTitle = "退出登录失败"'],
   [contents.app, 'const googleErrorTitle = "Google 登录失败"'],
   [contents.app, 'logConsoleEvent("auth"'],
-  [contents.home, 'logConsoleEvent("home"'],
+  [contents.app, 'logConsoleEvent("home"'],
   [contents.create, 'logConsoleEvent("create"'],
   [contents.play, 'logConsoleEvent("play"'],
   [contents.app, 'role="alertdialog"'],

@@ -139,13 +139,16 @@ button {
 }
 
 .avatar {
-  display: block;
+  display: inline-grid;
   width: 36px;
   height: 36px;
+  place-items: center;
   border-radius: 50%;
-  background:
-    linear-gradient(135deg, rgba(255, 194, 0, 0.95), rgba(255, 255, 255, 0.8)),
-    #2b3034;
+  background: linear-gradient(135deg, rgba(184, 109, 255, 0.16) 0%, rgba(124, 92, 255, 0.16) 52%, rgba(236, 140, 255, 0.16) 100%);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .avatar-image {
@@ -200,6 +203,7 @@ button {
   text-align: left;
 }
 
+.user-area.menu-open .user-menu,
 .user-area:hover .user-menu,
 .user-area:focus-within .user-menu {
   opacity: 1;
@@ -287,6 +291,20 @@ button {
   margin: 0 0 10px;
   color: var(--muted);
   line-height: 22px;
+}
+
+.error-dialog-details {
+  max-height: min(320px, 42vh);
+  margin: 16px 0 12px;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(6, 8, 10, 0.72);
+  color: #f1f6f4;
+  font: 12px/1.55 "SFMono-Regular", "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .error-dialog .primary-pill {

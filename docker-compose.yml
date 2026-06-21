@@ -50,7 +50,8 @@ services:
 
   backend:
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://yahaha:change-me-local@db:5432/yahaha_game}
       BACKEND_HOST: ${BACKEND_HOST:-0.0.0.0}
@@ -72,11 +73,19 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
       GITHUB_REDIRECT_URI: ${GITHUB_REDIRECT_URI:-http://localhost:8000/api/auth/oauth/github/callback}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-mock}
+      AGENT_RUNNER: ${AGENT_RUNNER:-langgraph}
       MOCK_PROVIDER_ENABLED: ${MOCK_PROVIDER_ENABLED:-true}
       OPENAI_COMPATIBLE_BASE_URL: ${OPENAI_COMPATIBLE_BASE_URL:-https://api.example.com/v1}
       OPENAI_COMPATIBLE_API_KEY: ${OPENAI_COMPATIBLE_API_KEY:-}
       OPENAI_COMPATIBLE_MODEL: ${OPENAI_COMPATIBLE_MODEL:-example-model}
       OPENAI_COMPATIBLE_TIMEOUT_SECONDS: ${OPENAI_COMPATIBLE_TIMEOUT_SECONDS:-120}
+      LLM_PROVIDER: ${LLM_PROVIDER:-${MODEL_PROVIDER:-mock}}
+      LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-30}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-yahaha-game}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LAN_AGENTS_SRC_PATH: ${LAN_AGENTS_SRC_PATH:-/app/lan_agents/src}
     ports:
       - "8000:8000"
     depends_on:
@@ -92,7 +101,8 @@ services:
     build:
       context: ./frontend
     environment:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+      VITE_API_PROXY_TARGET: ${VITE_API_PROXY_TARGET:-http://backend:8000}
     ports:
       - "5173:5173"
     depends_on:

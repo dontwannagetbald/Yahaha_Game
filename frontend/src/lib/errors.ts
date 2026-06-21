@@ -5,6 +5,7 @@ export type UserFacingError = {
   message: string;
   retryHint: string | null;
   nextStep: string;
+  details?: string;
 };
 
 export function createUserError(
@@ -13,9 +14,13 @@ export function createUserError(
   nextStep: string,
 ): UserFacingError {
   if (error instanceof ApiError) {
+    const normalizedApiMessage =
+      error.status === 422 && error.message === "Unprocessable Entity"
+        ? "当前请求暂时无法处理，请检查输入内容后再试。"
+        : error.message;
     return {
       title,
-      message: error.message,
+      message: normalizedApiMessage,
       retryHint: error.retryHint,
       nextStep,
     };

@@ -39,6 +39,15 @@ class ObjectStorageService:
             use_ssl=settings.minio_use_ssl,
             config=Config(signature_version="s3v4"),
         )
+        self._presign_client = boto3.client(
+            "s3",
+            endpoint_url=settings.minio_public_endpoint,
+            aws_access_key_id=settings.minio_access_key,
+            aws_secret_access_key=settings.minio_secret_key,
+            region_name=settings.minio_region,
+            use_ssl=settings.minio_use_ssl,
+            config=Config(signature_version="s3v4"),
+        )
 
     def build_upload_object_key(self, *, user_id, upload_id, filename: str) -> str:
         safe_filename = self._sanitize_filename(filename)
@@ -142,7 +151,7 @@ class ObjectStorageService:
         self, operation_name: str, *, object_key: str, expires_in: int
     ) -> str:
         try:
-            return self._s3_client.generate_presigned_url(
+            return self._presign_client.generate_presigned_url(
                 operation_name,
                 Params={"Bucket": self.bucket, "Key": object_key},
                 ExpiresIn=expires_in,

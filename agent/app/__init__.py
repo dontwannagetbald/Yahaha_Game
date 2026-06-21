@@ -1,2 +1,0 @@
-"""Standalone agent prototype package."""
-

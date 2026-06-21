@@ -38,6 +38,35 @@ const fallbackCoverSvg = encodeURIComponent(`
 
 export const fallbackCoverUrl = `data:image/svg+xml;charset=UTF-8,${fallbackCoverSvg}`;
 
+const GAME_TAG_LABELS: Record<string, string> = {
+  survival: "生存",
+  arcade: "街机",
+  puzzle: "解谜",
+  action: "动作",
+  platformer: "平台跳跃",
+  racing: "竞速",
+  adventure: "冒险",
+  horror: "恐怖",
+  strategy: "策略",
+  sports: "体育",
+  cozy: "治愈",
+  simulate: "模拟",
+};
+
+export function mapGameTagToChinese(tag: string): string {
+  const normalized = tag.trim();
+  if (!normalized) {
+    return "未分类";
+  }
+
+  const mapped = GAME_TAG_LABELS[normalized.toLowerCase()];
+  if (mapped) {
+    return mapped;
+  }
+
+  return normalized;
+}
+
 export function formatCompactCount(value: number): string {
   if (value >= 10000) {
     return `${(value / 10000).toFixed(1)}万`;
@@ -68,7 +97,9 @@ export function formatPublishedAt(value: string | null): string {
 }
 
 export function toUiGame(rawGame: RawGame): Game {
-  const primaryTag = rawGame.tags[0] ?? "未分类";
+  const normalizedTags =
+    rawGame.tags.length > 0 ? rawGame.tags.map(mapGameTagToChinese) : ["未分类"];
+  const primaryTag = normalizedTags[0] ?? "未分类";
 
   return {
     id: rawGame.id,
@@ -77,7 +108,7 @@ export function toUiGame(rawGame: RawGame): Game {
     publishedAt: formatPublishedAt(rawGame.published_at),
     publishedAtIso: rawGame.published_at,
     tag: primaryTag,
-    tags: rawGame.tags.length > 0 ? rawGame.tags : [primaryTag],
+    tags: normalizedTags,
     likes: formatLikeLabel(rawGame.like_count),
     likeCount: rawGame.like_count,
     likedByMe: rawGame.liked_by_me,
