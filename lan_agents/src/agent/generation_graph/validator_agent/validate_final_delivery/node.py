@@ -389,6 +389,8 @@ def _runtime_failure_details(runtime_check: dict[str, Any]) -> list[str]:
         add_detail("game_ready signal missing")
     if runtime_check.get("render_signal_found") is False:
         add_detail("render signal missing")
+    if runtime_check.get("interaction_signal_found") is False:
+        add_detail("player input controls missing")
     return details or ["unknown runtime check failure"]
 
 

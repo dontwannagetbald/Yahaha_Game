@@ -12,10 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user, get_optional_current_user
 from app.config import settings
 from app.db import get_session
-from app.models import Game, GameLike, User
+from app.models import Game, GameLike, GenerationJob, User
+from app.storage import ObjectStorageService, StorageUnavailableError
 
 
 router = APIRouter(prefix="/api/games", tags=["games"])
+PUBLISHED_VERSION = "v1"
+
+
+def get_storage_service() -> ObjectStorageService:
+    return ObjectStorageService(settings)
 
 
 def _serialize_game_card(
@@ -50,9 +56,11 @@ def _serialize_game_detail(
 
 
 def _public_published_urls(game: Game) -> tuple[str, str, str | None]:
-    version = "v1"
     public_root = settings.minio_public_endpoint.rstrip("/")
-    base_url = f"{public_root}/{settings.minio_bucket}/published/{game.id}/{version}/"
+    base_url = (
+        f"{public_root}/{settings.minio_bucket}/"
+        f"published/{game.id}/{PUBLISHED_VERSION}/"
+    )
     manifest_url = f"{base_url}manifest.json"
     cover_url = game.cover_url
     if cover_url and "/uploads/" not in cover_url:
@@ -60,6 +68,56 @@ def _public_published_urls(game: Game) -> tuple[str, str, str | None]:
         filename = parsed.path.rsplit("/", 1)[-1] or "cover.png"
         cover_url = f"{base_url}assets/{filename}"
     return manifest_url, base_url, cover_url
+
+
+async def _draft_job_for_game(
+    db: AsyncSession, *, game_id: uuid.UUID, user_id: uuid.UUID
+) -> GenerationJob | None:
+    return (
+        await db.execute(
+            select(GenerationJob)
+            .where(
+                GenerationJob.game_id == game_id,
+                GenerationJob.user_id == user_id,
+                GenerationJob.status == "succeeded",
+            )
+            .order_by(GenerationJob.finished_at.desc(), GenerationJob.created_at.desc())
+        )
+    ).scalars().first()
+
+
+def _copy_draft_bundle_to_published_storage(
+    *,
+    storage: ObjectStorageService,
+    game: Game,
+    job: GenerationJob | None,
+) -> None:
+    if job is None:
+        return
+
+    draft_prefix = str(job.artifact_prefix or "").strip().strip("/")
+    if not draft_prefix.startswith("drafts/"):
+        return
+
+    try:
+        source_keys = storage.list_object_keys(draft_prefix)
+        if not source_keys:
+            raise HTTPException(status_code=409, detail="Draft artifacts are unavailable")
+        for source_key in source_keys:
+            relative_path = source_key[len(draft_prefix) :].lstrip("/")
+            if not relative_path:
+                continue
+            destination_key = storage.build_published_object_key(
+                game_id=game.id,
+                version=PUBLISHED_VERSION,
+                relative_path=relative_path,
+            )
+            storage.copy_object(
+                source_key=source_key,
+                destination_key=destination_key,
+            )
+    except StorageUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.get("")
@@ -222,12 +280,24 @@ async def publish_game(
     game_id: uuid.UUID,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[ObjectStorageService, Depends(get_storage_service)],
 ) -> dict[str, object]:
     game = await db.get(Game, game_id)
     if game is None or game.owner_id != user.user_id or game.status == "deleted":
         raise HTTPException(status_code=404, detail="Game not found")
     if game.status != "draft":
         raise HTTPException(status_code=409, detail="Game is not a draft")
+
+    draft_job = await _draft_job_for_game(
+        db,
+        game_id=game.id,
+        user_id=user.user_id,
+    )
+    _copy_draft_bundle_to_published_storage(
+        storage=storage,
+        game=game,
+        job=draft_job,
+    )
 
     manifest_url, artifact_base_url, cover_url = _public_published_urls(game)
     game.status = "published"

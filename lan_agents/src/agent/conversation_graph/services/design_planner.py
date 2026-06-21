@@ -84,7 +84,10 @@ class DesignPlanner:
     def plan(self, state: ConversationState) -> dict[str, Any]:
         """Return a `game_plan` update for the current conversation state."""
         fallback = deterministic_plan_update(state)
-        if fallback.get("conversation_status") == "ready_to_confirm":
+        if (
+            fallback.get("conversation_status") == "ready_to_confirm"
+            and not str(state.user_event.get("message") or "").strip()
+        ):
             return fallback
         force_complete = should_force_complete_plan(state)
         try:
@@ -102,16 +105,36 @@ class DesignPlanner:
             message = "LLM provider failed while generating design suggestions"
             if reason:
                 message = f"{message}: {reason}"
-            raise ProviderError(message) from exc
+            raise ProviderError(
+                message,
+                details={
+                    "reason": "provider_exception",
+                    "provider_error": reason or "unknown",
+                    "missing_fields": missing_confirmable_game_plan_fields(
+                        fallback["game_plan"]
+                    ),
+                    "conversation_status": fallback.get("conversation_status"),
+                },
+            ) from exc
 
         game_plan = _merge_llm_patch(
             fallback["game_plan"],
-            _allowed_llm_patch(state, fallback["game_plan"], llm_result.get("game_plan_patch", {})),
+            _allowed_llm_patch(
+                state,
+                fallback["game_plan"],
+                llm_result.get("game_plan_patch", {}),
+            ),
             llm_result.get("suggestions", []),
             state.user_requirements,
         )
         if force_complete and missing_confirmable_game_plan_fields(game_plan):
-            game_plan = complete_missing_plan_fields(game_plan, state)
+            raise ProviderError(
+                "LLM provider did not complete game_plan within question budget",
+                details={
+                    "reason": "incomplete_forced_completion",
+                    "missing_fields": missing_confirmable_game_plan_fields(game_plan),
+                },
+            )
         status = (
             "ready_to_confirm"
             if not missing_confirmable_game_plan_fields(game_plan)
@@ -121,36 +144,50 @@ class DesignPlanner:
         if status == "collecting":
             message = str(llm_result.get("assistant_message") or "").strip()
             suggestions = string_suggestions(llm_result.get("suggestions"), [])
-            if not message and not suggestions:
-                raise ProviderError("模型没有返回追问和可点击建议，请重试。")
-            if message and not suggestions:
-                raise ProviderError("模型没有返回可点击建议，请重试。")
-            if message or suggestions:
-                missing_fields = missing_confirmable_game_plan_fields(game_plan)
-                update["assistant_response"] = {
-                    "message": friendly_design_message(
-                        message,
-                        missing_fields=missing_fields,
-                        game_plan=game_plan,
-                    ),
-                    "suggestions": suggestions,
-                    "card": None,
-                    "actions": [],
-                }
+            missing_fields = missing_confirmable_game_plan_fields(game_plan)
+            if not message:
+                raise ProviderError(
+                    "LLM provider returned empty assistant_message while plan is incomplete",
+                    details={
+                        "reason": "empty_assistant_message",
+                        "missing_fields": missing_fields,
+                    },
+                )
+            if not suggestions:
+                raise ProviderError(
+                    "LLM provider returned empty suggestions while plan is incomplete",
+                    details={
+                        "reason": "empty_suggestions",
+                        "missing_fields": missing_fields,
+                    },
+                )
+            update["assistant_response"] = {
+                "message": friendly_design_message(
+                    message,
+                    missing_fields=missing_fields,
+                    game_plan=game_plan,
+                ),
+                "suggestions": suggestions,
+                "card": None,
+                "actions": [],
+            }
         return update
 
 
 def deterministic_plan_update(state: ConversationState) -> dict[str, Any]:
-    """Create a deterministic plan update from accumulated requirements."""
+    """Normalize existing plan state without inferring design content."""
     requirements = state.user_requirements
     message = str(state.user_event.get("message", "")).strip()
     game_plan = copy_dict(state.game_plan)
     game_plan["plan_id"] = game_plan.get("plan_id") or f"plan-{uuid4().hex[:8]}"
     if not game_plan.get("tags"):
-        game_plan["tags"] = requirements.get("preference_profile", {}).get(
+        candidate_tags = requirements.get("preference_profile", {}).get(
             "genre_candidates", []
-        ) or ["arcade", "casual"]
-    game_plan["tags"] = normalize_tags(game_plan.get("tags", []))
+        )
+        if candidate_tags:
+            game_plan["tags"] = normalize_tags(candidate_tags)
+    if game_plan.get("tags"):
+        game_plan["tags"] = normalize_tags(game_plan.get("tags", []))
 
     explicit_fields = extract_explicit_plan_fields(message)
     for field, value in explicit_fields.items():
@@ -158,15 +195,7 @@ def deterministic_plan_update(state: ConversationState) -> dict[str, Any]:
     if not explicit_fields:
         _absorb_answer_to_previous_question(game_plan, state, message)
 
-    if not game_plan.get("gameplay") and _message_has_gameplay_signal(message):
-        game_plan["gameplay"] = requirements.get("intent_summary") or message
-    if not game_plan.get("style"):
-        game_plan["style"] = requirements.get("preference_profile", {}).get(
-            "visual_style"
-        )
-    if not game_plan.get("characters") and ("小猫" in message or "猫" in message):
-        game_plan["characters"] = ["小猫"]
-    if not game_plan.get("core_loop") and game_plan.get("gameplay"):
+    if game_plan.get("gameplay") and not game_plan.get("core_loop"):
         game_plan["core_loop"] = _core_loop_from_gameplay(str(game_plan["gameplay"]))
 
     game_plan["confidence"] = (
@@ -191,85 +220,6 @@ def should_force_complete_plan(state: ConversationState) -> bool:
     except (TypeError, ValueError):
         revision_count = 0
     return revision_count > MAX_QUESTION_ROUNDS
-
-
-def complete_missing_plan_fields(
-    game_plan: dict[str, Any], state: ConversationState
-) -> dict[str, Any]:
-    """Complete required plan fields so the graph can stop asking questions."""
-    completed = copy_dict(game_plan)
-    requirements = state.user_requirements
-    message = str(state.user_event.get("message") or "").strip()
-    intent_summary = str(requirements.get("intent_summary") or "").strip()
-    gameplay_source = str(completed.get("gameplay") or intent_summary or message).strip()
-
-    completed["plan_id"] = completed.get("plan_id") or f"plan-{uuid4().hex[:8]}"
-    completed["title"] = completed.get("title") or _fallback_title(
-        gameplay_source or intent_summary
-    )
-    completed["tags"] = normalize_tags(
-        completed.get("tags")
-        or requirements.get("preference_profile", {}).get("genre_candidates", [])
-        or ["casual"]
-    )
-    completed["gameplay"] = gameplay_source or "围绕已有创意完成轻量互动挑战"
-    completed["core_loop"] = completed.get("core_loop") or _core_loop_from_gameplay(
-        str(completed["gameplay"])
-    )
-    completed["style"] = (
-        completed.get("style")
-        or requirements.get("preference_profile", {}).get("visual_style")
-        or "简洁明快"
-    )
-    completed["characters"] = completed.get("characters") or _fallback_characters(
-        requirements, completed
-    )
-    completed["win_condition"] = (
-        completed.get("win_condition")
-        or _fallback_win_condition(str(completed["gameplay"]))
-    )
-    completed["lose_condition"] = completed.get("lose_condition") or "未完成主要目标"
-    completed["controls"] = completed.get("controls") or "方向键或点击控制"
-    completed["suggestions"] = []
-    completed["confidence"] = "medium"
-    if not completed.get("introduction"):
-        completed["introduction"] = summarize_game_introduction(completed, requirements)
-    return completed
-
-
-def _fallback_title(source: str) -> str:
-    text = source.strip().strip("。")
-    for prefix in ["我想做一个", "我想做一款", "做一个", "做一款", "用户想做一个"]:
-        if text.startswith(prefix):
-            text = text[len(prefix) :]
-            break
-    return (text[:12] or "互动小游戏").strip("，,。 ")
-
-
-def _fallback_characters(
-    requirements: dict[str, Any], game_plan: dict[str, Any]
-) -> list[str]:
-    candidates = [
-        str(item).replace("主角", "").strip()
-        for item in requirements.get("must_have", [])
-        if isinstance(item, str) and ("主角" in item or "角色" in item)
-    ]
-    if candidates:
-        return [candidates[0]]
-    gameplay = str(game_plan.get("gameplay") or "")
-    if "玩家" in gameplay:
-        return ["玩家"]
-    return ["主角"]
-
-
-def _fallback_win_condition(gameplay: str) -> str:
-    if "收集" in gameplay:
-        return "收集目标物并达到分数要求"
-    if "追逐" in gameplay or "抓" in gameplay:
-        return "在限定时间内完成追逐目标"
-    if "躲避" in gameplay:
-        return "坚持到倒计时结束"
-    return "完成关卡目标"
 
 
 def _absorb_answer_to_previous_question(
@@ -542,27 +492,11 @@ def _allowed_llm_patch(
     fallback_game_plan: dict[str, Any],
     patch: Any,
 ) -> Any:
-    """Prevent the model from silently deciding unanswered required fields."""
-    if should_force_complete_plan(state) or not isinstance(patch, dict):
-        return patch
-
-    allowed_fields = {
-        "plan_id",
-        "tags",
-        "gameplay",
-        "core_loop",
-        "suggestions",
-        "confidence",
-    }
-    allowed_fields.update(
-        field
-        for field, value in fallback_game_plan.items()
-        if value and field in ALLOWED_GAME_PLAN_FIELDS
-    )
-    allowed_fields.update(extract_explicit_plan_fields(str(state.user_event.get("message") or "")).keys())
-    allowed_fields.update(_fields_from_previous_question(state))
+    """Keep only schema-approved plan fields; semantic extraction belongs to the LLM."""
+    if not isinstance(patch, dict):
+        return {}
     return {
         field: value
         for field, value in patch.items()
-        if field in allowed_fields
+        if field in ALLOWED_GAME_PLAN_FIELDS
     }

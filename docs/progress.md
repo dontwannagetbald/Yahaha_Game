@@ -2,13 +2,118 @@
 
 本文档记录已实现功能、对应实施计划 step，以及尚未落地或需要补齐的边界。项目 layer、目录边界和文件职责维护在 [architecture.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/architecture.md)。
 
-### Frontend Step 6.6：Create 成功态重做重新创建任务 ☑️ 已完成
+### 2026-06-21：Create 生成后改为聊天触发修改 ☑️ 已完成
 
-- 已将 Create 右侧成功态的 `重做` 按钮从纯 UI 改为真实操作：点击后直接复用当前已确认 `create_session` 再次调用 `POST /api/jobs`，不走 revision，不要求重新聊天确认（Frontend Step 6.6）。
-- 已在 `frontend/src/App.tsx` 增加重做建任务链路，创建成功后会立刻把新 job 插入任务列表顶部、切换选中任务并显示 `pending` 初始日志，避免用户误以为按钮无效（Frontend Step 6.6）。
+- 已调整确认卡片展示逻辑：用户确认游戏卡片后，卡片继续留在聊天区作为原始方案记录，但 `确认 / 重新生成` 按钮只在 `ready_to_confirm` 阶段显示，进入 confirmed 或生成中后会隐藏（Frontend Step 6.12）。
+- 已在生成成功后追加 AI 提示气泡“有想要修改的地方欢迎随时告诉我～”，引导用户通过聊天框继续提出修改，不再依赖右侧操作按钮（Frontend Step 6.12）。
+- 已移除右侧游戏面板里的“重做”按钮；用户在成功态聊天框发送修改需求时，前端会立即追加用户消息和 AI 气泡“好的，这就为您修改”，并基于当前 succeeded 任务调用 `POST /api/jobs/{job_id}/revisions` 创建 revision job（Frontend Step 6.12）。
+- 已保持旧卡片不变，不再因为 revision 生成新卡片；修改结果只通过右侧选中的新 revision 任务和游戏预览体现（Frontend Step 6.12）。
+- 已更新 `frontend/scripts/check-create-confirm-card.mjs`、`check-create-chat-event.mjs`、`check-create-redo-revision.mjs` 和 `check-create-layout.mjs`，锁定确认后隐藏按钮、聊天气泡、聊天触发 revision 和右侧移除重做按钮（Frontend Step 6.12）。
+- 已验证 `cd frontend && npm run test:create-redo-revision`、`npm run test:create-confirm-card`、`npm run test:create-chat-event`、`npm run test:create-layout`、`npm run build` 通过（Frontend Step 6.12）。
+
+### 2026-06-21：Create 成功态封面入口与预览舞台 ☑️ 已完成
+
+- 已把 `Create` 成功态右侧预览改为“封面先行，点击开始游玩后再挂载 iframe”；前端按 `job_id` 记忆本页已开始的任务，切到别的任务再切回同一任务时会继续直接显示游戏，不会每次都重置到封面（Frontend Step 6.11）。
+- 已在 `backend/app/jobs.py` 的任务序列化补齐 `cover_url`，并在 `frontend/src/App.tsx` / `frontend/src/mock/runtime.ts` 映射到 `CreateTaskItem`，让成功态封面优先使用真实游戏封面，拿不到时再回退默认封面（Frontend Step 6.11）。
+- 已重构 `frontend/src/pages/CreatePage.tsx` 与 `frontend/src/pages/create.css` 的成功态沙盒结构，新增封面舞台、开始按钮和独立运行内框；运行 iframe 改为挂在带安全内边距的 `preview-runtime-shell` 内，减少游戏最右侧贴边被裁掉的情况（Frontend Step 6.11）。
+- 已保留沙盒下方可点击 `Bundle URL`，确保你之前要求的独立打开 draft bundle 入口仍可用（Frontend Step 6.11）。
+- 已更新 `backend/tests/test_jobs.py` 与 `frontend/scripts/check-create-layout.mjs`，分别锁定 `job cover_url` 返回和“封面入口后再挂载 iframe”的 Create 成功态结构（Frontend Step 6.11）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_jobs.py -q`、`cd frontend && npm run test:create-layout`、`cd frontend && npm run build` 通过（Frontend Step 6.11）。
+
+### 2026-06-21：Home 页游戏标签中文化补齐 ☑️ 已完成
+
+- 已定位主页标签仍显示英文的根因：`frontend/src/lib/games.ts` 的 `mapGameTagToChinese()` 映射表缺少首页真实高频标签 `casual / runner / co-op`，导致卡片与精选区直接回退显示原始英文（Frontend Step 4）。
+- 已按后端 `MVP_TAGS={adventure, action, strategy, puzzle, arcade, survival, simulation, racing, rhythm, roleplay, casual, educational}` 对齐前端双向标签映射；显示侧补齐 `simulation/rhythm/roleplay/educational` 等标准标签中文名，请求侧 `mapChineseTagToGameTag()` 会把中文筛选词翻回 canonical tag，避免中文筛选命中不到英文存储标签（Frontend Step 4）。
+- 已同步将 Home 页筛选菜单改为 `全部类型 + 12 个 MVP 标签中文项`，移除与当前标准集合不一致的旧筛选文案（Frontend Step 4）。
+- 已更新 `frontend/scripts/check-play-page.mjs` 和 `frontend/scripts/check-home-api.mjs`，分别锁定标签映射覆盖和 Home Games API 的中文标签回转行为（Frontend Step 4）。
+- 已验证 `cd frontend && npm run test:play-page`、`npm run test:home-api`、`npm run build` 通过（Frontend Step 4）。
+
+### 2026-06-21：Create 任务列表支持删除历史任务 ☑️ 已完成
+
+- 已补充后端 `DELETE /api/jobs/{job_id}`，删除范围收敛为单条历史任务；只允许删除自己的已结束任务，`pending/running` 会返回 `409`，并在删除前解绑子 revision 的 `parent_job_id` 与素材 `job_id`，避免脏引用残留（Step 8.5、Frontend Step 6.10）。
+- 已在 `backend/tests/test_jobs.py` 增加删除回归，覆盖“删任务不删会话”“非本人不可删除”“生成中任务不可删除”三条核心边界（Step 8.5）。
+- 已在 `frontend/src/api/jobs.ts`、`frontend/src/App.tsx` 和 `frontend/src/pages/CreatePage.tsx` 接入任务删除按钮与调用链路；删除当前选中任务后，会自动切到剩余最新任务，若没有历史任务则新建空白会话，避免右侧残留已删除任务的旧内容（Frontend Step 6.10）。
+- 已在 `frontend/src/mock/runtime.ts` 补齐 mock 删除行为，并在 `frontend/src/pages/create.css` 调整任务项结构为“选择按钮 + 删除按钮”，避免按钮嵌套并对生成中任务禁用删除（Frontend Step 6.10）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_jobs.py tests/test_create_sessions.py -q` 与 `cd frontend && npm run build` 通过；结果分别为 `30 passed` 和 `vite build` 成功（Step 8.5、Frontend Step 6.10）。
+
+### Backend Real Generation：Coding/Asset 真实 provider 接入 ☑️ 已完成
+
+- 已定位前端生成后仍像“本地写死”的根因：`generation_graph.draft_game_code()` 硬编码使用 `MockLLMProvider(response=_mock_code_response(state))`，导致 Coding Agent 即使在 `LLM_PROVIDER=openai-compatible` 时也不会调用真实大模型生成 HTML/CSS/JS（Backend Real Generation）。
+- 已改为按环境选择 Coding provider：`LLM_PROVIDER=mock` 时保留 deterministic 本地模板，非 mock 时调用 `provider_from_env()`，让 Coding Agent 真正请求配置的大模型生成 bundle 代码（Backend Real Generation）。
+- 已发现 backend 容器未传入 `ASSET_IMAGE_PROVIDER / OPENAI_IMAGE_*`，导致 Asset Agent 图像仍走 mock PNG；已在 `docker-compose.yml` 和 `.env.example` 补齐图像 provider 环境变量（Backend Real Generation）。
+- 已新增回归测试锁定非 mock 配置下 `draft_game_code` 必须调用配置 provider，并验证生成的 `game.js` 来自 provider 返回值；已验证 `cd lan_agents && .venv/bin/python -m pytest tests/integration_tests/test_generation_graph.py tests/unit_tests/test_coding_agent.py tests/unit_tests/test_generation_provider.py -q` 通过，结果为 `19 passed`（Backend Real Generation）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest -q` 通过，结果为 `108 passed`（Backend Real Generation）。
+
+### Backend Agent Debug：兼容 max_completion_tokens 模型参数 ☑️ 已完成
+
+- 已定位 `Orchestrator failed while building parallel contracts` 的根因：`OpenAICompatibleLLMProvider.complete_json()` 对 chat completions 固定发送 `max_tokens`，但当前配置模型拒绝该参数并要求使用 `max_completion_tokens`（Backend Agent Debug）。
+- 已在 chat completions 请求遇到 `Unsupported parameter: max_tokens ... Use max_completion_tokens instead` 时自动重试一次，并将 payload 中的 `max_tokens` 替换为 `max_completion_tokens`；Responses API 分支继续使用现有 `max_output_tokens`（Backend Agent Debug）。
+- 已新增 provider 回归测试，断言第一次请求使用 `max_tokens`、收到 400 后第二次请求改用 `max_completion_tokens` 且成功解析 JSON，避免 Orchestrator 因模型参数方言失败（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_llm_provider.py -q`、`cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_generation_orchestrator.py tests/unit_tests/test_generation_provider.py tests/integration_tests/test_generation_graph.py -q` 和 `cd lan_agents && .venv/bin/langgraph validate` 通过（Backend Agent Debug）。
+
+### Backend Agent Debug：拦截静态封面 bundle 冒充可玩游戏 ☑️ 已完成
+
+- 已定位“Create 右侧预览看起来像封面而不是游戏”的后端根因：当前 `runtime_check` 只校验 `canvas / game.js / game_ready / render signal`，静态标题页只要循环重绘也会被误判为可玩 bundle（Backend Agent Debug）。
+- 已在 `lan_agents/src/agent/generation_graph/tools/runtime_check.py` 增加最小交互门禁，要求 `game.js` 至少包含键盘、鼠标、指针或触摸输入信号；缺失时 `interaction_signal_found=false`，整体 `passed=false`（Backend Agent Debug）。
+- 已在 `lan_agents/src/agent/generation_graph/coding_agent/debug_code_with_assets/node.py` 把“缺交互”纳入 `unresolved_issues`，并在修复成功时记录 `Restored player input controls`，避免 Debug Agent 把静态封面页当成已修好（Backend Agent Debug）。
+- 已在 `lan_agents/src/agent/generation_graph/validator_agent/validate_final_delivery/node.py` 为运行时失败详情补齐 `player input controls missing`，最终验收会明确拒绝“能画画面但不可交互”的 bundle（Backend Agent Debug）。
+- 已同步更新 generation graph mock bundle、validator/coding debug 测试基线，保证通过验收的样例至少具备最小输入控制（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_debug.py tests/unit_tests/test_validator_agent.py -q`、`cd lan_agents && .venv/bin/python -m pytest tests/integration_tests/test_generation_graph.py -q`、`cd backend && ../.venv/bin/python -m pytest tests/test_agent_runner.py -q` 通过（Backend Agent Debug）。
+
+### Backend Agent Debug：补齐 game_ready 运行协议兜底 ☑️ 已完成
+
+- 已定位 `game_ready signal missing` 的根因：Validator 拦截是正确的，真正缺口在上游 Coding/Debug 产物协议；真实模型可能生成可渲染、可交互的 `game.js`，但遗漏向父 iframe 发送 `game_ready`（Backend Agent Debug）。
+- 已新增 `lan_agents/src/agent/generation_graph/tools/runtime_protocol.py`，提供确定性 `ensure_game_ready_signal()`，在不放宽 Validator 的前提下为 `game.js` 补齐 `window.parent.postMessage({ type: 'game_ready' }, '*')`（Backend Agent Debug）。
+- 已在 `draft_code` 阶段和 `debug_code_with_assets` 阶段都接入 ready 兜底；Debug 阶段会记录 `game_ready_signal_missing` 已修复，并在重新运行 runtime check 后清空 unresolved issue（Backend Agent Debug）。
+- 已增强 Coding/Debug prompt，明确 `game_js` 初始化完成后必须发送 `game_ready`，降低真实 LLM 继续漏掉运行协议的概率（Backend Agent Debug）。
+- 已新增回归测试覆盖 provider 遗漏 ready、Debug 无 LLM 时补 ready，以及 Validator/generation graph 最终验收不放松；已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_agent.py tests/unit_tests/test_coding_debug.py -q`、`cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_validator_agent.py tests/integration_tests/test_generation_graph.py -q` 和 `cd lan_agents && .venv/bin/langgraph validate` 通过（Backend Agent Debug）。
+
+### Backend Agent Debug：避免 suggestions 缺失导致聊天发送失败 ☑️ 已完成
+
+- 已定位“消息发送失败，模型没有返回追问和可点击建议”的根因：DesignPlanner 在 `collecting` 阶段把模型返回 `assistant_message` 或 `suggestions` 缺失视为硬错误，直接抛出 `ProviderError`，没有退回到本地缺字段追问（Backend Agent Debug）。
+- 已在 `lan_agents/src/agent/conversation_graph/nodes/_helpers.py` 为 `followup_for_missing_fields()` 补齐每个关键字段的本地建议答案，包含 `title / style / controls / win_condition / lose_condition` 等常见缺口（Backend Agent Debug）。
+- 已在 `lan_agents/src/agent/conversation_graph/services/design_planner.py` 改为优先回退到 deterministic follow-up：模型缺 `assistant_message`、缺 `suggestions` 或两者都缺时，不再直接报错，而是基于 `missing_fields` 生成本地追问和可点击建议，并记录 `planner_diagnostics`（Backend Agent Debug）。
+- 已在 `backend/app/create_sessions.py` 和 `backend/app/main.py` 增加结构化错误透传；当 provider 真正失败时，后端会返回 `error.details`，携带 `reason / missing_fields / provider_error` 等上下文（Backend Agent Debug）。
+- 已在 `frontend/src/api/client.ts` 与 `frontend/src/lib/errors.ts` 接入 `error.details` 解析和弹窗透传，前端 ErrorDialog 现在可以展示详细错误 JSON，而不只是一句总提示（Frontend Step 6.6、Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_design_planner.py -q`、`cd backend && ../.venv/bin/python -m pytest tests/test_create_sessions.py -q`、`cd frontend && npm run test:api-error-parsing`、`cd frontend && npm run build` 通过（Backend Agent Debug）。
+
+### Backend Artifact Storage：Agent bundle 入库与发布复制 ☑️ 已完成
+
+- 已将 Agent 生成的本地 bundle 上传到对象存储 draft 前缀：`drafts/{user_id}/{job_id}/v1/`，覆盖 `manifest.json / index.html / style.css / game.js / assets/*`，避免前端拿到容器内 `/app/output/...` 本地路径（Backend Artifact Storage）。
+- 已让 draft 预览统一走后端 owner-only artifact 代理：`/api/jobs/{job_id}/artifacts/{relative_path}`，job/game 返回 `manifest_url=/api/jobs/{job_id}/artifacts/manifest.json` 与 `artifact_base_url=/api/jobs/{job_id}/artifacts/`，前端可用同源 cookie 读取 draft bundle（Backend Artifact Storage）。
+- 已扩展对象存储服务，支持 `get_object / list_object_keys / copy_object`，用于 draft 代理读取和 Publish 复制对象（Backend Artifact Storage）。
+- 已在发布 draft 时查找关联的 succeeded generation job；若 job 的 `artifact_prefix` 是 `drafts/`，则复制全部 draft 对象到 `published/{game_id}/v1/`，再将游戏 URL 切换为公开 published 地址（Backend Artifact Storage）。
+- 已补齐旧任务保护：如果历史 job 仍保存 `/app/output/...` 绝对本地路径且容器重建后文件已丢失，artifact 代理会直接返回 404，不再误把本地路径拼成 MinIO key 导致黑屏或异常（Backend Artifact Storage）。
+- 已补充后端测试覆盖本地 bundle 入库、artifact 代理读取、旧路径 404 和 publish 复制；已验证 `cd backend && ../.venv/bin/python -m pytest -q` 通过，结果为 `108 passed`（Backend Artifact Storage）。
+
+### Frontend Preview Debug：Create 成功态游戏沙盒防止溢出 ☑️ 已完成
+
+- 已定位 Create 成功态“游戏沙盒区域”溢出的根因：当前容器只有基础 `div` 样式，没有像 Play 页那样对内部运行内容做裁切和尺寸约束；一旦放入 iframe、canvas 或图片视频，内容容易顶出面板边界（Frontend Preview Debug）。
+- 已在 `frontend/src/pages/create.css` 为 `.preview-frame.preview-sandbox` 增加 `position: relative` 与 `overflow: hidden`，并将内部对齐改为 stretch，保证成功态预览内容始终被裁切在圆角沙盒内（Frontend Preview Debug）。
+- 已为成功态沙盒补齐内部内容约束：`iframe` 固定 `width/height: 100%`，`canvas / img / video` 统一限制 `max-width: 100%` 与 `max-height: 100%`，避免实际游戏界面超出范围（Frontend Preview Debug）。
+- 已在 `frontend/src/App.tsx` 把 job 详情里的 `manifest_url / artifact_base_url` 映射进当前任务视图，避免轮询后预览字段丢失，Create 成功态可以持续拿到真实 draft 入口（Frontend Preview Debug）。
+- 已在 `frontend/src/pages/CreatePage.tsx` 为成功态接入真实 `iframe` 预览，优先使用 `artifact_base_url + index.html`，兜底从 `manifest_url` 派生入口；不再只渲染空白占位 `div`（Frontend Preview Debug）。
+- 已定位“Bundle URL 单独打开能跑，但 Create 内嵌白屏”的关键环境差异：右侧预览 iframe 之前使用 `sandbox="allow-scripts"`，会把同源 artifact 页面降成 opaque origin；独立标签页正常的 bundle，在该 sandbox 环境里可能直接白屏（Frontend Preview Debug）。
+- 已将 Create 右侧预览 iframe 调整为 `sandbox="allow-scripts allow-same-origin"`，保持脚本可运行的同时恢复同源 artifact 运行环境，避免“独立开页正常、内嵌白屏”的差异（Frontend Preview Debug）。
+- 已在 `frontend/src/pages/CreatePage.tsx` 和 `frontend/src/pages/create.css` 为沙盒下方补齐可点击 `Bundle URL` 链接，支持单独打开当前 draft bundle，并保持链接位于沙盒底部（Frontend Preview Debug）。
+- 已更新 `frontend/scripts/check-create-layout.mjs`，锁定成功态沙盒必须具备裁切能力和 iframe/canvas 尺寸约束，防止后续回归（Frontend Preview Debug）。
+- 已验证 `cd frontend && npm run test:create-layout`、`cd frontend && npm run build` 通过（Frontend Preview Debug）。
+
+### Frontend Step 6.6：Create 成功态重做创建 revision job ☑️ 已完成
+
+- 已修正 Create 右侧成功态 `重做` 链路：前端不再复用 confirmed `create_session` 调用 `POST /api/jobs`，而是基于当前选中任务调用 `POST /api/jobs/{job_id}/revisions` 创建 revision job，避免触发 `Generation job already exists`（Frontend Step 6.6）。
+- 已在 `frontend/src/api/jobs.ts` 增加 `createRevisionJob()`，封装 revision job 创建接口和 raw response 调试日志（Frontend Step 6.6）。
+- 已在 `frontend/src/App.tsx` 增加重做 revision 建任务链路，创建成功后会立刻把新 job 插入任务列表顶部、切换选中任务并显示 `pending` 初始日志，同时保留 `parent_job_id` 和 `revision_intent`，避免用户误以为按钮无效（Frontend Step 6.6）。
 - 已在 `frontend/src/pages/CreatePage.tsx` 为成功态 `重做` 按钮接入真实回调和 `重做中` 状态，防止重复点击（Frontend Step 6.6）。
-- 已移除后端 `POST /api/jobs` 对“同一个 confirmed session 只能创建一个 root job”的限制，允许同一确认方案重复创建新任务，供前端 `重做` 直接复用（Frontend Step 6.6）。
-- 已更新 `backend/tests/test_jobs.py` 与 `frontend/scripts/check-create-layout.mjs`，分别锁定“同会话 rerun create job”与“重做按钮必须触发真实回调”的行为；已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_jobs.py -k "allows_rerun" -q`、`cd frontend && npm run test:create-layout`、`cd frontend && npm run build` 通过（Frontend Step 6.6）。
+- 已新增 `frontend/scripts/check-create-redo-revision.mjs` 和 `npm run test:create-redo-revision`，锁定重做必须走 revision API，防止回归到初始生成接口（Frontend Step 6.6）。
+- 已验证 `cd frontend && npm run test:create-redo-revision`、`cd frontend && npm run test:create-tasks`、`cd frontend && npm run build` 均通过（Frontend Step 6.6）。
+
+### Backend Preview Debug：修复 draft artifact URL 契约 ☑️ 已完成
+
+- 已定位 `artifact_base_url=null` 的根因：`GET /api/jobs/{job_id}` 只返回了 `artifact_prefix` 和 `manifest_url`，没有序列化 `artifact_base_url`；同时 `manifest_url` 来自 Agent 容器内本地路径 `/app/output/...`，浏览器无法直接访问（Backend Preview Debug）。
+- 已新增 owner-only artifact 读取路由 `GET /api/jobs/{job_id}/artifacts/{relative_path}`，从 job 的 `artifact_prefix` 安全读取生成的 `manifest.json / index.html / style.css / game.js / assets/*`，并阻止绝对路径和 `..` 越界访问（Backend Preview Debug）。
+- 已将 job 详情中的 `manifest_url` 改为 `/api/jobs/{job_id}/artifacts/manifest.json`，并补齐 `artifact_base_url=/api/jobs/{job_id}/artifacts/`，让前端可以用同源 cookie 读取 draft 产物并拼 iframe 入口（Backend Preview Debug）。
+- 已补充 `backend/tests/test_jobs.py::test_job_detail_exposes_browser_accessible_artifact_urls`，覆盖 job 详情 URL 和 artifact 文件读取；已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_jobs.py tests/test_agent_runner.py -q` 通过（Backend Preview Debug）。
 
 ### Frontend Debug：打印 Create Job 原始响应 ☑️ 已完成
 
@@ -1221,3 +1326,27 @@
 - 已加入敏感片段脱敏边界，revision 输出和日志不回显 secret、token、password、OAuth code 或完整 presigned URL 特征（Agent Step 11）。
 - 已将 `revision_graph` 导出到 `agent.__init__`、`agent.graph` 和 `lan_agents/langgraph.json`；`langgraph validate` 现在识别 `conversation/generation/revision` 三个图（Agent Step 11）。
 - 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/integration_tests/test_revision_graph.py tests/unit_tests/test_project_structure.py tests/unit_tests/test_configuration.py -q` 通过，结果为 `8 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Agent Step 11）。
+
+### 2026-06-21：为 revision_graph 接入 LLM Provider
+
+- 已新增 `RevisionPlanner` 服务，复用现有 `LLMProvider.complete_json()`，让生成后修改链路优先由当前配置的大模型理解用户修改并输出 `revision_intent/game_plan_patch/requires_regeneration/assistant_message/suggestions`（Agent Step 11）。
+- 已在 prompt 中明确生成后修改不覆盖旧产物、不修改 `parent_job/base_material_usage/generated_result/create_session`，只允许修改 `game_plan` 的可控字段，并禁止输出 secret、token、password、OAuth code 或完整 presigned URL（Agent Step 11）。
+- 已保留确定性 fallback：默认 mock provider 或模型返回非 revision schema 时，继续使用本地解析识别失败条件、雪地背景、主角替换等修改，避免本地和 CI 被真实模型阻塞（Agent Step 11）。
+- 已让 `understand_revision_intent` 节点调用 `RevisionPlanner`，并新增 `test_revision_planner.py` 覆盖 provider 调用、prompt 约束、LLM patch 合并和节点调用（Agent Step 11）。
+
+### 2026-06-21：生成成功后上传 draft bundle 到 MinIO
+
+- 已在后端任务成功分支接入 draft bundle 上传：当 Agent runner 返回本地 `artifact_prefix` workspace 时，后端会遍历 `manifest.json / index.html / style.css / game.js / assets/*` 并上传到 `drafts/{user_id}/{job_id}/v1/*`（Backend Agent MinIO）。
+- 已让 `generation_jobs.artifact_prefix` 保存 MinIO draft object prefix，不再把浏览器不可访问的本地 `/app/output/...` 作为最终产物前缀；job detail 继续返回 owner-only `/api/jobs/{job_id}/artifacts/...` 代理 URL（Backend Agent MinIO）。
+- 已让 draft `Game.manifest_url`、`artifact_base_url` 和 `cover_url` 使用后端 artifact 代理地址，避免把私有 draft 的完整 presigned URL 暴露给前端并避免签名过期问题（Backend Agent MinIO）。
+- 已为 `ObjectStorageService` 增加 `get_object`、`list_object_keys` 和 `copy_object` 边界；artifact 读取路由优先兼容旧本地路径，找不到本地路径时从 MinIO object 读取并返回正确 `Content-Type`（Backend Agent MinIO）。
+- 已新增/修复后端测试覆盖 draft bundle 上传、artifact 代理读取、storage object 读取和 Python 3.9/FastAPI response 注解兼容；已验证相关后端测试通过（Backend Agent MinIO）。
+
+### 2026-06-21：第一阶段 Design Agent 改为 LLM-first 填充方案 ☑️ 已完成
+
+- 已收敛 `DesignPlanner` 边界：`game_plan` 的标题、标签、玩法、风格、角色、胜负条件和操作方式由 LLM patch 或用户显式字段提供，本地只做 schema 字段过滤、MVP 标签过滤、简介派生和完整性检查（Agent Step 1.41）。
+- 已移除第一阶段本地题材推断：`update_requirements` 不再把“小猫/星星/森林/可爱/躲避”等关键词抽成 `must_have`、`nice_to_have` 或 `preference_profile`，只保留用户原话摘要、显式约束和素材用途同步（Agent Step 1.41）。
+- 已移除本地追问兜底：当 plan 未完整且模型没有返回 `assistant_message` 或 `suggestions` 时，直接抛出带 `details.reason/missing_fields` 的 `ProviderError`；用户误点生成但方案未完整时，确认节点只返回缺字段提示，不再生成写死建议（Agent Step 1.41）。
+- 已将 `normalize_tags` 调整为纯过滤器：空标签保持为空，不再本地默认补 `casual`；标签缺失会继续作为待补字段交给 LLM 处理（Agent Step 1.41）。
+- 已更新回归测试，覆盖 LLM 首轮可完整出卡、超过五轮仍需 LLM 自行补全、本地不再补建议/补标签/猜需求、模型追问建议保持透传（Agent Step 1.41）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests tests/integration_tests -q` 通过，结果为 `178 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Agent Step 1.41）。

@@ -39,18 +39,52 @@ const fallbackCoverSvg = encodeURIComponent(`
 export const fallbackCoverUrl = `data:image/svg+xml;charset=UTF-8,${fallbackCoverSvg}`;
 
 const GAME_TAG_LABELS: Record<string, string> = {
-  survival: "生存",
-  arcade: "街机",
-  puzzle: "解谜",
-  action: "动作",
-  platformer: "平台跳跃",
-  racing: "竞速",
   adventure: "冒险",
-  horror: "恐怖",
+  action: "动作",
   strategy: "策略",
+  puzzle: "解谜",
+  arcade: "街机",
+  survival: "生存",
+  simulation: "模拟",
+  racing: "竞速",
+  rhythm: "节奏",
+  roleplay: "角色扮演",
+  casual: "休闲",
+  educational: "教育",
+  // Backward-compatible aliases for old seed/mock data.
+  runner: "跑酷",
+  shooter: "射击",
+  "co-op": "合作",
+  coop: "合作",
+  co_op: "合作",
+  platformer: "平台跳跃",
+  horror: "恐怖",
   sports: "体育",
   cozy: "治愈",
   simulate: "模拟",
+};
+
+const CHINESE_TAG_TO_GAME_TAG: Record<string, string> = {
+  冒险: "adventure",
+  动作: "action",
+  策略: "strategy",
+  解谜: "puzzle",
+  街机: "arcade",
+  生存: "survival",
+  模拟: "simulation",
+  竞速: "racing",
+  节奏: "rhythm",
+  角色扮演: "roleplay",
+  休闲: "casual",
+  教育: "educational",
+  // Backward-compatible aliases for old displayed tags.
+  跑酷: "runner",
+  射击: "shooter",
+  合作: "co-op",
+  平台跳跃: "platformer",
+  恐怖: "horror",
+  体育: "sports",
+  治愈: "cozy",
 };
 
 export function mapGameTagToChinese(tag: string): string {
@@ -65,6 +99,15 @@ export function mapGameTagToChinese(tag: string): string {
   }
 
   return normalized;
+}
+
+export function mapChineseTagToGameTag(tag: string): string {
+  const normalized = tag.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  return CHINESE_TAG_TO_GAME_TAG[normalized] ?? normalized.toLowerCase();
 }
 
 export function formatCompactCount(value: number): string {

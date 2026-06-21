@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "title": "星星小猫冒险",
+  "description": "帮助小猫在森林里收集星星，避开滚石和树桩，坚持到倒计时结束。",
+  "entry": "index.html",
+  "styles": [
+    "style.css"
+  ],
+  "scripts": [
+    "game.js"
+  ],
+  "assets": [],
+  "cover": "assets/cover.png",
+  "controls": [
+    "方向键或 WASD 移动"
+  ],
+  "runtime": "html5-iframe",
+  "generatedAt": "2026-06-21T12:43:51.310621Z"
+}

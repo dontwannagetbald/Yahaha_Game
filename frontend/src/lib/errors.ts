@@ -23,6 +23,7 @@ export function createUserError(
       message: normalizedApiMessage,
       retryHint: error.retryHint,
       nextStep,
+      details: error.details,
     };
   }
 

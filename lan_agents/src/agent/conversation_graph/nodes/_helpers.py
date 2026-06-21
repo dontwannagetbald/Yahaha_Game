@@ -189,7 +189,7 @@ def normalize_tags(tags: list[Any]) -> list[str]:
         text = str(tag).strip().lower()
         if text in MVP_TAGS and text not in normalized:
             normalized.append(text)
-    return normalized or ["casual"]
+    return normalized
 
 
 def missing_game_plan_fields(game_plan: dict[str, Any]) -> list[str]:
@@ -308,27 +308,6 @@ def assets_missing_usage(material_usage: dict[str, Any]) -> list[str]:
         if not asset.get("intended_use"):
             missing.append(str(asset.get("asset_id") or asset.get("filename") or "asset"))
     return missing
-
-
-def followup_for_missing_fields(missing_fields: list[str]) -> dict[str, Any]:
-    first_missing = missing_fields[0] if missing_fields else ""
-    followups = {
-        "title": "我已经理解大方向了。你希望这个游戏叫什么名字？",
-        "gameplay": "我还需要确认核心玩法：玩家主要做什么？",
-        "style": "玩法方向清楚了。你希望游戏是什么视觉风格？",
-        "characters": "风格也清楚了。主角或主要角色是谁？",
-        "win_condition": "角色确定了。玩家怎样才算赢？",
-        "lose_condition": "胜利条件有了。什么情况下算失败？",
-        "controls": "最后确认操作方式：玩家怎么控制？",
-        "core_loop": "我还需要把核心循环说清楚。玩家每轮重复做哪些动作？",
-        "tags": "我还需要确认游戏类型标签。",
-        "plan_id": "我正在整理方案，还需要再确认一个关键设定。",
-    }
-    message = followups.get(
-        first_missing,
-        "我还需要补齐一些设定，才能给你确认卡片。",
-    )
-    return {"message": message, "suggestions": []}
 
 
 def safe_text(value: Any, fallback: str) -> str:

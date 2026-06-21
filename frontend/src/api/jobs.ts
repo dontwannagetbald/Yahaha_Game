@@ -12,6 +12,7 @@ export type RawJob = {
   started_at: string | null;
   finished_at: string | null;
   game_id: string | null;
+  cover_url?: string | null;
   result_summary: string | null;
   error_message: string | null;
   validation_report: Record<string, unknown> | null;
@@ -48,6 +49,19 @@ type CreateJobRequest = {
 type CreateJobResponse = {
   job_id: string;
   session_id: string;
+  status: JobStatus;
+  created_at: string;
+};
+
+type CreateRevisionJobRequest = {
+  message: string;
+};
+
+type CreateRevisionJobResponse = {
+  job_id: string;
+  session_id: string | null;
+  parent_job_id: string | null;
+  revision_intent: string | null;
   status: JobStatus;
   created_at: string;
 };
@@ -97,4 +111,28 @@ export async function createJob(payload: CreateJobRequest): Promise<CreateJobRes
   }
 
   return response;
+}
+
+export async function createRevisionJob(
+  jobId: string,
+  payload: CreateRevisionJobRequest,
+): Promise<CreateRevisionJobResponse> {
+  const response = await requestJson<CreateRevisionJobResponse>(`/api/jobs/${jobId}/revisions`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  printCreateJobResponse(`POST /api/jobs/${jobId}/revisions raw response`, response);
+
+  if (!response?.job_id) {
+    throw new Error("Create revision job response is incomplete.");
+  }
+
+  return response;
+}
+
+export async function deleteJob(jobId: string): Promise<void> {
+  await requestJson<void>(`/api/jobs/${jobId}`, {
+    method: "DELETE",
+  });
+  printCreateJobResponse(`DELETE /api/jobs/${jobId} raw response`, { ok: true });
 }

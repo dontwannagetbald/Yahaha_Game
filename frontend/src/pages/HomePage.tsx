@@ -4,7 +4,7 @@ import { formatCompactCount } from "../lib/games";
 import type { Game, GameSortParam, SortMode } from "../types/ui";
 import "./home.css";
 
-const filterOptions = ["全部类型", "冒险", "竞速", "射击", "解谜", "合作", "创造", "动作"];
+const filterOptions = ["全部类型", "冒险", "动作", "策略", "解谜", "街机", "生存", "模拟", "竞速", "节奏", "角色扮演", "休闲", "教育"];
 
 type HomePageProps = {
   games: Game[];

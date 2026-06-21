@@ -11,9 +11,10 @@ from agent.state import ConversationState
 
 
 class RecordingProvider(MockLLMProvider):
-    def __init__(self) -> None:
+    def __init__(self, response: dict[str, object] | None = None) -> None:
         super().__init__(
-            response={
+            response=response
+            or {
                 "game_plan_patch": {},
                 "assistant_message": "我已经理解大方向了。你希望先补充哪个关键设定？",
                 "suggestions": ["先定游戏名字", "先定玩法目标", "先定操作方式"],
@@ -31,7 +32,7 @@ class RecordingProvider(MockLLMProvider):
         )
 
 
-def test_design_planner_does_not_confirm_on_first_turn_when_model_overfills_plan() -> None:
+def test_design_planner_allows_llm_to_complete_plan_on_first_turn() -> None:
     provider = MockLLMProvider(
         response={
             "game_plan_patch": {
@@ -57,12 +58,12 @@ def test_design_planner_does_not_confirm_on_first_turn_when_model_overfills_plan
 
     update = planner.plan(state)
 
-    assert update["conversation_status"] == "collecting"
+    assert update["conversation_status"] == "ready_to_confirm"
     assert update["game_plan"]["tags"] == ["casual", "arcade"]
     assert update["game_plan"]["suggestions"] == ["方向键移动", "收集10颗星星"]
-    assert update["game_plan"]["title"] == ""
-    assert update["game_plan"]["win_condition"] == ""
-    assert update["assistant_response"]["card"] is None
+    assert update["game_plan"]["title"] == "月光小猫"
+    assert update["game_plan"]["win_condition"] == "收集10颗星星"
+    assert "assistant_response" not in update
 
 
 def test_design_planner_allows_overfill_after_question_budget() -> None:
@@ -339,7 +340,19 @@ def test_design_planner_prompt_exposes_missing_field_count_for_progress_claims()
 
 
 def test_design_planner_prompt_forces_completion_after_five_question_rounds() -> None:
-    provider = RecordingProvider()
+    provider = RecordingProvider(
+        response={
+            "game_plan_patch": {
+                "style": "像素街机",
+                "characters": ["老鹰", "老鼠"],
+                "win_condition": "老鹰在倒计时结束前抓到老鼠",
+                "lose_condition": "倒计时结束仍未抓到老鼠",
+                "controls": "方向键移动老鹰",
+            },
+            "assistant_message": "",
+            "suggestions": [],
+        }
+    )
 
     DesignPlanner(provider=provider).plan(
         ConversationState(
@@ -407,39 +420,38 @@ def test_design_planner_generates_card_after_five_question_rounds() -> None:
     assert "assistant_response" not in update
 
 
-def test_design_planner_fallback_completes_card_after_max_rounds_if_model_omits_fields() -> None:
+def test_design_planner_raises_after_max_rounds_if_model_omits_fields() -> None:
     provider = MockLLMProvider(
         response={
-            "game_plan_patch": {},
+            "game_plan_patch": {"tags": ["arcade", "casual"]},
             "assistant_message": "",
             "suggestions": [],
         }
     )
 
-    update = DesignPlanner(provider=provider).plan(
-        ConversationState(
-            user_requirements={
-                **ConversationState().user_requirements,
-                "intent_summary": "用户想做一个老鹰抓老鼠的追逐小游戏。",
-                "must_have": ["老鹰主角", "追逐老鼠"],
-                "revision_count": 6,
-            },
-            game_plan={
-                **ConversationState().game_plan,
-                "plan_id": "plan-eagle",
-                "title": "老鹰抓老鼠",
-                "tags": ["arcade"],
-                "gameplay": "老鹰追逐老鼠并完成抓捕",
-                "core_loop": ["追逐", "躲避", "抓捕"],
-            },
-            user_event={"type": "chat", "message": "你直接补齐方案"},
+    with pytest.raises(ProviderError, match="did not complete game_plan") as exc_info:
+        DesignPlanner(provider=provider).plan(
+            ConversationState(
+                user_requirements={
+                    **ConversationState().user_requirements,
+                    "intent_summary": "用户想做一个老鹰抓老鼠的追逐小游戏。",
+                    "must_have": ["老鹰主角", "追逐老鼠"],
+                    "revision_count": 6,
+                },
+                game_plan={
+                    **ConversationState().game_plan,
+                    "plan_id": "plan-eagle",
+                    "title": "老鹰抓老鼠",
+                    "tags": ["arcade"],
+                    "gameplay": "老鹰追逐老鼠并完成抓捕",
+                    "core_loop": ["追逐", "躲避", "抓捕"],
+                },
+                user_event={"type": "chat", "message": "你直接补齐方案"},
+            )
         )
-    )
 
-    assert update["conversation_status"] == "ready_to_confirm"
-    assert missing_confirmable_game_plan_fields(update["game_plan"]) == []
-    assert update["game_plan"]["suggestions"] == []
-    assert update["game_plan"]["introduction"]
+    assert exc_info.value.details["reason"] == "incomplete_forced_completion"
+    assert "style" in exc_info.value.details["missing_fields"]
 
 
 def test_design_planner_raises_when_provider_fails() -> None:
@@ -472,10 +484,12 @@ def test_design_planner_raises_when_collecting_response_has_no_model_suggestions
         }
     )
 
-    with pytest.raises(ProviderError, match="模型没有返回可点击建议"):
+    with pytest.raises(ProviderError, match="empty suggestions") as exc_info:
         DesignPlanner(provider=provider).plan(
             ConversationState(user_event={"type": "chat", "message": "做一个云朵游戏"})
         )
+
+    assert exc_info.value.details["reason"] == "empty_suggestions"
 
 
 def test_design_planner_raises_when_collecting_response_has_no_question_or_suggestions() -> None:
@@ -487,10 +501,12 @@ def test_design_planner_raises_when_collecting_response_has_no_question_or_sugge
         }
     )
 
-    with pytest.raises(ProviderError, match="模型没有返回追问和可点击建议"):
+    with pytest.raises(ProviderError, match="empty assistant_message") as exc_info:
         DesignPlanner(provider=provider).plan(
             ConversationState(user_event={"type": "chat", "message": "做一个老鹰抓老鼠"})
         )
+
+    assert exc_info.value.details["reason"] == "empty_assistant_message"
 
 
 def test_design_planner_partial_llm_plan_keeps_collecting_with_custom_followup() -> None:
@@ -551,16 +567,16 @@ def test_design_planner_second_turn_can_complete_plan_from_existing_state() -> N
 
     update = planner.plan(state)
 
-    assert update["conversation_status"] == "collecting"
+    assert update["conversation_status"] == "ready_to_confirm"
     assert update["game_plan"]["characters"] == ["云朵精灵"]
-    assert update["game_plan"]["win_condition"] == ""
-    assert update["assistant_response"]["card"] is None
+    assert update["game_plan"]["win_condition"] == "收集20个光点"
+    assert "assistant_response" not in update
 
 
 def test_design_planner_derives_core_loop_from_gameplay_when_model_omits_it() -> None:
     provider = MockLLMProvider(
         response={
-            "game_plan_patch": {},
+            "game_plan_patch": {"tags": ["arcade", "casual"]},
             "assistant_message": "",
             "suggestions": [],
         }

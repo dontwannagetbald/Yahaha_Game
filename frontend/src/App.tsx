@@ -19,7 +19,16 @@ import {
   type CreateSessionState,
 } from "./api/create-sessions";
 import { getGameDetail, likePublishedGame, listPublishedGames, publishGame } from "./api/games";
-import { createJob, getJob, getJobLogs, listJobs, type JobStatus, type RawAgentLog } from "./api/jobs";
+import {
+  createJob,
+  createRevisionJob,
+  deleteJob,
+  getJob,
+  getJobLogs,
+  listJobs,
+  type JobStatus,
+  type RawAgentLog,
+} from "./api/jobs";
 import {
   MAX_CREATE_UPLOAD_SIZE_BYTES,
   completeUpload,
@@ -33,6 +42,7 @@ import { createUserError, type UserFacingError } from "./lib/errors";
 import { patchLikedGame } from "./lib/games";
 import {
   createMockCreateSession,
+  deleteMockJob,
   getMockCreateSession,
   getMockJob,
   getMockJobLogs,
@@ -58,6 +68,8 @@ const googleErrorTitle = "Google 登录失败";
 const createLoginPromptTitle = "创建游戏需要先登录";
 const THINKING_MESSAGE_DELAY_MS = 1000;
 const JOB_POLL_INTERVAL_MS = 1500;
+const CREATE_REVISION_ACK_MESSAGE = "好的，这就为您修改";
+const CREATE_SUCCESS_REVISION_PROMPT = "有想要修改的地方欢迎随时告诉我～";
 
 function buildValidationReportDetails(
   validationReport: Record<string, unknown> | null,
@@ -77,6 +89,45 @@ function getOptionalJobField(job: object, field: string): unknown {
   return field in job ? (job as Record<string, unknown>)[field] : null;
 }
 
+function mapRawJobToCreateTask(job: {
+  job_id: string;
+  session_id: string | null;
+  parent_job_id: string | null;
+  game_id: string | null;
+  title: string;
+  status: JobStatus;
+  created_at: string;
+  result_summary: string | null;
+  error_message: string | null;
+  validation_report: Record<string, unknown> | null;
+  cover_url?: string | null;
+}): CreateTaskItem {
+  const manifestUrl =
+    typeof getOptionalJobField(job, "manifest_url") === "string"
+      ? (getOptionalJobField(job, "manifest_url") as string)
+      : null;
+  const artifactBaseUrl =
+    typeof getOptionalJobField(job, "artifact_base_url") === "string"
+      ? (getOptionalJobField(job, "artifact_base_url") as string)
+      : null;
+
+  return {
+    job_id: job.job_id,
+    session_id: job.session_id,
+    parent_job_id: job.parent_job_id,
+    game_id: job.game_id,
+    title: job.title,
+    status: job.status,
+    created_at: job.created_at,
+    cover_url: typeof job.cover_url === "string" ? job.cover_url : null,
+    result_summary: job.result_summary,
+    error_message: job.error_message,
+    validation_report: job.validation_report,
+    manifest_url: manifestUrl,
+    artifact_base_url: artifactBaseUrl,
+  };
+}
+
 export function App() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -84,6 +135,7 @@ export function App() {
   const [createTasks, setCreateTasks] = useState<CreateTaskItem[]>([]);
   const [createTasksLoading, setCreateTasksLoading] = useState(false);
   const [createTasksError, setCreateTasksError] = useState<UserFacingError | null>(null);
+  const [deletingCreateTaskId, setDeletingCreateTaskId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedCreateSessionId, setSelectedCreateSessionId] = useState<string | null>(null);
   const [currentJobStatus, setCurrentJobStatus] = useState<JobStatus | null>(null);
@@ -98,7 +150,7 @@ export function App() {
   const [createSessionSending, setCreateSessionSending] = useState(false);
   const [publishingGameId, setPublishingGameId] = useState<string | null>(null);
   const [createSessionPendingEventType, setCreateSessionPendingEventType] = useState<
-    "chat" | "upload_assets" | "regenerate" | "confirm" | "redo" | null
+    "chat" | "upload_assets" | "regenerate" | "confirm" | null
   >(null);
   const [games, setGames] = useState<Game[]>([]);
   const [allGames, setAllGames] = useState<Game[]>([]);
@@ -341,7 +393,7 @@ export function App() {
     session: CreateSessionState,
     options: {
       fallbackTitle: string;
-      eventType: "confirm" | "redo";
+      eventType: "confirm";
     },
   ): Promise<boolean> {
     const { fallbackTitle, eventType } = options;
@@ -368,9 +420,12 @@ export function App() {
       title: session.assistant_response.card?.title ?? fallbackTitle,
       status: "pending",
       created_at: job.created_at,
+      cover_url: null,
       result_summary: "等待执行。",
       error_message: null,
       validation_report: null,
+      manifest_url: null,
+      artifact_base_url: null,
     };
 
     prependCreateTask(nextTask);
@@ -389,14 +444,7 @@ export function App() {
     logConsoleEvent("create", {
       requestPath: "/api/jobs",
       status: 201,
-      businessStatus:
-        eventType === "redo"
-          ? mockEnabled
-            ? "mock_job_redo_created"
-            : "job_redo_created"
-          : mockEnabled
-            ? "mock_job_created"
-            : "job_created",
+      businessStatus: mockEnabled ? "mock_job_created" : "job_created",
       job_id: job.job_id,
       session_id: job.session_id,
       prompt: prompt ?? null,
@@ -426,18 +474,7 @@ export function App() {
         throw new Error("未找到当前生成任务。");
       }
 
-      const nextTask: CreateTaskItem = {
-        job_id: job.job_id,
-        session_id: job.session_id,
-        parent_job_id: job.parent_job_id,
-        game_id: job.game_id,
-        title: job.title,
-        status: job.status,
-        created_at: job.created_at,
-        result_summary: job.result_summary,
-        error_message: job.error_message,
-        validation_report: job.validation_report,
-      };
+      const nextTask = mapRawJobToCreateTask(job);
 
       setCreateTasks((current) => {
         const nextTasks = current.map((task) =>
@@ -457,8 +494,9 @@ export function App() {
         preview_inputs: {
           game_id: job.game_id,
           artifact_prefix: getOptionalJobField(job, "artifact_prefix"),
-          manifest_url: getOptionalJobField(job, "manifest_url"),
-          artifact_base_url: getOptionalJobField(job, "artifact_base_url"),
+          manifest_url: nextTask.manifest_url,
+          artifact_base_url: nextTask.artifact_base_url,
+          cover_url: nextTask.cover_url,
         },
       });
       if (nextTask.status === "failed" && !reportedFailedJobIdsRef.current.has(nextTask.job_id)) {
@@ -590,7 +628,7 @@ export function App() {
 
     try {
       const response = mockEnabled ? listMockJobs() : await listJobs();
-      setCreateTasks(response.jobs);
+      setCreateTasks(response.jobs.map(mapRawJobToCreateTask));
       const recoverableTask = response.jobs.find((task) => task.session_id);
       if (recoverableTask) {
         void handleSelectCreateTask(recoverableTask);
@@ -714,6 +752,61 @@ export function App() {
     }
   }
 
+  async function handleDeleteCreateTask(task: CreateTaskItem): Promise<boolean> {
+    if (deletingCreateTaskId) {
+      return false;
+    }
+
+    setDeletingCreateTaskId(task.job_id);
+
+    try {
+      if (mockEnabled) {
+        deleteMockJob(task.job_id);
+      } else {
+        await deleteJob(task.job_id);
+      }
+
+      reportedFailedJobIdsRef.current.delete(task.job_id);
+      const remainingTasks = createTasks
+        .filter((item) => item.job_id !== task.job_id)
+        .sort(
+          (taskA, taskB) =>
+            new Date(taskB.created_at).getTime() - new Date(taskA.created_at).getTime(),
+        );
+      setCreateTasks(remainingTasks);
+
+      logConsoleEvent("create", {
+        requestPath: `/api/jobs/${task.job_id}`,
+        status: 204,
+        businessStatus: mockEnabled ? "mock_deleted" : "deleted",
+        job_id: task.job_id,
+      });
+
+      if (selectedTaskId === task.job_id) {
+        if (remainingTasks.length > 0) {
+          void handleSelectCreateTask(remainingTasks[0]);
+        } else {
+          void handleCreateNewSession();
+        }
+      }
+
+      return true;
+    } catch (error) {
+      const userError = createUserError("删除任务失败", error, "请稍后重试。");
+      setCreateSessionError(userError);
+      alertCreateBackendError(userError);
+      logConsoleEvent("create", {
+        requestPath: `/api/jobs/${task.job_id}`,
+        status: error instanceof ApiError ? error.status : 500,
+        businessStatus: "error",
+        error_code: error instanceof ApiError ? error.code : "unknown_error",
+      });
+      return false;
+    } finally {
+      setDeletingCreateTaskId(null);
+    }
+  }
+
   async function handleSendCreateMessage(message: string): Promise<boolean> {
     const normalizedMessage = message.trim();
     if (!normalizedMessage) {
@@ -736,12 +829,26 @@ export function App() {
       return false;
     }
 
+    const canReviseGeneratedGame =
+      currentJobStatus === "succeeded" &&
+      Boolean(selectedTaskId) &&
+      createSession.conversation_status === "confirmed";
+
     if (
       isConversationLocked ||
       createSessionSending ||
-      !["collecting", "ready_to_confirm"].includes(createSession.conversation_status)
+      (!["collecting", "ready_to_confirm"].includes(createSession.conversation_status) &&
+        !canReviseGeneratedGame)
     ) {
       return false;
+    }
+
+    if (canReviseGeneratedGame && selectedTaskId) {
+      return createRevisionJobFromChat({
+        message: normalizedMessage,
+        sourceTaskId: selectedTaskId,
+        session: createSession,
+      });
     }
 
     const currentSessionId = selectedCreateSessionId;
@@ -1035,54 +1142,127 @@ export function App() {
     }
   }
 
-  async function handleRedoGeneratedGame(): Promise<boolean> {
-    if (!selectedCreateSessionId || !createSession) {
-      const userError = createUserError(
-        "重做失败",
-        new Error("当前没有可用的 Create 会话。"),
-        "请先恢复对应任务后再试。",
-      );
-      setCreateSessionError(userError);
-      return false;
-    }
-
-    if (currentJobStatus !== "succeeded") {
-      const userError = createUserError(
-        "重做失败",
-        new Error("当前任务还不能重做。"),
-        "请在生成完成后再试。",
-      );
-      setCreateSessionError(userError);
-      return false;
-    }
-
-    if (createSessionSending) {
-      return false;
-    }
+  async function createRevisionJobFromChat({
+    message,
+    sourceTaskId,
+    session,
+  }: {
+    message: string;
+    sourceTaskId: string;
+    session: CreateSessionState;
+  }): Promise<boolean> {
+    const now = new Date().toISOString();
+    const optimisticMessage: CreateSessionMessage = {
+      id: `optimistic-${session.session_id}-${Date.now()}-revision-user`,
+      role: "user",
+      content: message,
+      payload: { optimistic: true, event_type: "revision_request" },
+      created_at: now,
+    };
+    const revisionAckMessage: CreateSessionMessage = {
+      id: `optimistic-${session.session_id}-${Date.now()}-revision-assistant`,
+      role: "assistant",
+      content: CREATE_REVISION_ACK_MESSAGE,
+      payload: { optimistic: true, event_type: "revision_ack" },
+      created_at: now,
+    };
 
     setCreateSessionSending(true);
-    setCreateSessionPendingEventType("redo");
+    setCreateSessionPendingEventType(null);
     setCreateSessionError(null);
+    setCreateSession((current) => {
+      if (!current || current.session_id !== session.session_id) {
+        return current;
+      }
+
+      return {
+        ...current,
+        messages: [...current.messages, optimisticMessage, revisionAckMessage],
+      };
+    });
 
     try {
       const fallbackTitle =
-        createSession.assistant_response.card?.title ??
-        (typeof createSession.game_plan?.title === "string" ? createSession.game_plan.title : null) ??
-        createTasks.find((task) => task.job_id === selectedTaskId)?.title ??
+        session.assistant_response.card?.title ??
+        (typeof session.game_plan?.title === "string" ? session.game_plan.title : null) ??
+        createTasks.find((task) => task.job_id === sourceTaskId)?.title ??
         "未命名游戏";
-      return await createGenerationJobFromSession(createSession, {
-        fallbackTitle,
-        eventType: "redo",
+      const sourceTask = createTasks.find((task) => task.job_id === sourceTaskId) ?? null;
+      const job = mockEnabled
+        ? {
+            job_id: `mock-revision-job-${Date.now()}`,
+            session_id: session.session_id,
+            parent_job_id: sourceTaskId,
+            revision_intent: message,
+            status: "pending" as const,
+            created_at: new Date().toISOString(),
+          }
+        : await createRevisionJob(sourceTaskId, { message });
+      const nextTask: CreateTaskItem = {
+        job_id: job.job_id,
+        session_id: job.session_id ?? session.session_id,
+        parent_job_id: job.parent_job_id ?? sourceTaskId,
+        game_id: null,
+        title: `${sourceTask?.title ?? fallbackTitle} 修改`,
+        status: "pending",
+        created_at: job.created_at,
+        cover_url: null,
+        result_summary: "等待执行。",
+        error_message: null,
+        validation_report: null,
+        manifest_url: null,
+        artifact_base_url: null,
+      };
+
+      prependCreateTask(nextTask);
+      setSelectedTaskId(job.job_id);
+      setSelectedCreateSessionId(session.session_id);
+      setCurrentJobStatus("pending");
+      setSelectedAgentLogs([
+        {
+          step: "revision_job",
+          level: "info",
+          message: "修改任务已创建，正在基于上一版游戏生成新版本。",
+          created_at: job.created_at,
+        },
+      ]);
+      setSelectedJobPollingError(null);
+      logConsoleEvent("create", {
+        requestPath: `/api/jobs/${sourceTaskId}/revisions`,
+        businessStatus: mockEnabled ? "mock_chat_revision_job_created" : "chat_revision_job_created",
+        job_id: job.job_id,
+        parent_job_id: job.parent_job_id ?? sourceTaskId,
+        session_id: job.session_id ?? session.session_id,
+        revision_intent: job.revision_intent ?? message,
+        event_type: "chat_revision",
       });
+      console.info("[create][debug] created revision job response", {
+        raw_job: job,
+        ui_task: nextTask,
+        revision_intent: job.revision_intent ?? message,
+      });
+      return true;
     } catch (error) {
-      const userError = createUserError("重做失败", error, "请稍后重试。");
+      setCreateSession((current) => {
+        if (!current || current.session_id !== session.session_id) {
+          return current;
+        }
+
+        return {
+          ...current,
+          messages: current.messages.filter(
+            (item) => item.id !== optimisticMessage.id && item.id !== revisionAckMessage.id,
+          ),
+        };
+      });
+      const userError = createUserError("修改失败", error, "请稍后重试。");
       setCreateSessionError(userError);
       alertCreateBackendError(userError);
       logConsoleEvent("create", {
-        requestPath: "/api/jobs",
+        requestPath: `/api/jobs/${sourceTaskId}/revisions`,
         status: error instanceof ApiError ? error.status : 500,
         businessStatus: "error",
-        event_type: "redo",
+        event_type: "chat_revision",
         error_code: error instanceof ApiError ? error.code : "unknown_error",
       });
       return false;
@@ -1673,6 +1853,7 @@ export function App() {
               tasks={createTasks}
               tasksLoading={createTasksLoading}
               tasksError={createTasksError}
+              deletingTaskId={deletingCreateTaskId}
               selectedTaskId={selectedTaskId}
               selectedCreateSessionId={selectedCreateSessionId}
               currentJobStatus={currentJobStatus}
@@ -1686,13 +1867,14 @@ export function App() {
               createSessionPendingEventType={createSessionPendingEventType}
               currentUser={currentUser}
               publishingGameId={publishingGameId}
+              revisionPromptMessage={CREATE_SUCCESS_REVISION_PROMPT}
               onRetryTasks={handleLoadCreateTasks}
               onCreateNewSession={handleCreateNewSession}
               onSelectTask={handleSelectCreateTask}
+              onDeleteTask={handleDeleteCreateTask}
               onPublishGame={handlePublishCreateGame}
               onConfirmCard={handleConfirmCreateCard}
               onRegenerateCard={handleRegenerateCreateCard}
-              onRedoGeneratedGame={handleRedoGeneratedGame}
               onSendMessage={handleSendCreateMessage}
               onUploadFiles={handleUploadCreateFiles}
               onRemoveBoundFile={handleRemoveBoundCreateFile}

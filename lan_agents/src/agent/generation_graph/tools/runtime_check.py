@@ -17,6 +17,12 @@ GAME_READY_PATTERN = re.compile(r"game_ready")
 RENDER_SIGNAL_PATTERN = re.compile(
     r"(getContext\s*\(|fillRect\s*\(|drawImage\s*\(|requestAnimationFrame\s*\()"
 )
+INTERACTION_SIGNAL_PATTERN = re.compile(
+    r"("
+    r"addEventListener\s*\(\s*['\"](?:keydown|keyup|keypress|click|mousedown|mouseup|mousemove|pointerdown|pointerup|pointermove|touchstart|touchend|touchmove)['\"]"
+    r"|on(?:keydown|keyup|keypress|click|mousedown|mouseup|mousemove|pointerdown|pointerup|pointermove|touchstart|touchend|touchmove)\s*="
+    r")"
+)
 
 
 def run_headless_runtime_check(entry_path: str) -> dict[str, Any]:
@@ -53,6 +59,7 @@ def run_headless_runtime_check(entry_path: str) -> dict[str, Any]:
     html_references_game_js = bool(GAME_JS_SCRIPT_PATTERN.search(html_source))
     game_ready_signal_found = bool(GAME_READY_PATTERN.search(js_source))
     render_signal_found = bool(RENDER_SIGNAL_PATTERN.search(js_source))
+    interaction_signal_found = bool(INTERACTION_SIGNAL_PATTERN.search(js_source))
 
     return {
         "mode": "static-node-fallback",
@@ -65,6 +72,7 @@ def run_headless_runtime_check(entry_path: str) -> dict[str, Any]:
         "syntax_error": syntax_error,
         "game_ready_signal_found": game_ready_signal_found,
         "render_signal_found": render_signal_found,
+        "interaction_signal_found": interaction_signal_found,
         "passed": bool(
             entry.exists()
             and game_js.exists()
@@ -73,5 +81,6 @@ def run_headless_runtime_check(entry_path: str) -> dict[str, Any]:
             and js_syntax_ok
             and game_ready_signal_found
             and render_signal_found
+            and interaction_signal_found
         ),
     }

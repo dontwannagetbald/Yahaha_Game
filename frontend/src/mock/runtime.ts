@@ -13,6 +13,7 @@ export type MockTask = {
   started_at: string | null;
   finished_at: string | null;
   game_id: string | null;
+  cover_url?: string | null;
   result_summary: string | null;
   error_message: string | null;
   validation_report: Record<string, unknown> | null;
@@ -348,6 +349,8 @@ export const mockRuntime = {
       started_at: "2026-06-19T18:01:00.000Z",
       finished_at: "2026-06-19T18:03:00.000Z",
       game_id: "mock-draft-1",
+      cover_url:
+        "https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=1200&q=80",
       result_summary: "draft game ready。",
       error_message: null,
       validation_report: null,
@@ -426,6 +429,19 @@ export function getMockJobLogs(jobId: string): { logs: MockAgentLog[] } {
   }
 
   return { logs };
+}
+
+export function deleteMockJob(jobId: string): void {
+  const task = getMockJob(jobId);
+  if (!task) {
+    throw new Error("未找到要删除的任务。");
+  }
+
+  if (task.status === "pending" || task.status === "running") {
+    throw new Error("任务仍在生成中，暂时不能删除。");
+  }
+
+  mockRuntime.tasks = mockRuntime.tasks.filter((item) => item.job_id !== jobId);
 }
 
 export function createMockCreateSession(): CreateSessionState {

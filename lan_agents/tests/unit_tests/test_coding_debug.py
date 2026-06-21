@@ -154,7 +154,7 @@ def test_debug_code_with_assets_repairs_js_error_once_and_rechecks(
     )
     provider = MockLLMProvider(
         response={
-            "game_js": "const canvas = document.getElementById('game'); const ctx = canvas.getContext('2d'); ctx.fillStyle = '#101418'; ctx.fillRect(0, 0, canvas.width, canvas.height); window.parent.postMessage({ type: 'game_ready' }, '*');",
+            "game_js": "const canvas = document.getElementById('game'); const ctx = canvas.getContext('2d'); let playerX = canvas.width / 2; window.addEventListener('keydown', (event) => { if (event.key === 'ArrowLeft') playerX -= 12; if (event.key === 'ArrowRight') playerX += 12; }); ctx.fillStyle = '#101418'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillRect(playerX, canvas.height - 40, 16, 16); window.parent.postMessage({ type: 'game_ready' }, '*');",
             "manifest_draft": manifest_draft,
             "repair_notes": ["fixed syntax and restored ready signal"],
         }
@@ -169,6 +169,58 @@ def test_debug_code_with_assets_repairs_js_error_once_and_rechecks(
     assert update["debug_report"]["runtime_check"]["js_syntax_ok"] is True
     assert update["debug_report"]["runtime_check"]["game_ready_signal_found"] is True
     assert len(provider.calls) == 1
+
+
+def test_debug_code_with_assets_adds_missing_game_ready_signal_without_llm(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.coding_agent.debug_code_with_assets.node import (
+        debug_code_with_assets,
+    )
+
+    state = _build_state(tmp_path)
+    manifest_draft = {
+        "schemaVersion": "1.0",
+        "title": state.game_plan["title"],
+        "description": state.game_plan["introduction"],
+        "entry": "index.html",
+        "styles": ["style.css"],
+        "scripts": ["game.js"],
+        "assets": [],
+        "cover": "",
+        "controls": [state.game_plan["controls"]],
+        "runtime": "html5-iframe",
+    }
+    _write_bundle_files(
+        state,
+        index_html="<!doctype html><html><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+        style_css="body { margin: 0; }",
+        game_js=(
+            "const canvas = document.getElementById('game');"
+            "const ctx = canvas.getContext('2d');"
+            "let playerX = canvas.width / 2;"
+            "window.addEventListener('keydown', (event) => {"
+            " if (event.key === 'ArrowLeft') playerX -= 12;"
+            " if (event.key === 'ArrowRight') playerX += 12;"
+            "});"
+            "ctx.fillStyle = '#101418';"
+            "ctx.fillRect(0, 0, canvas.width, canvas.height);"
+            "ctx.fillRect(playerX, canvas.height - 40, 16, 16);"
+        ),
+        manifest_draft=manifest_draft,
+    )
+
+    update = debug_code_with_assets(state)
+
+    game_js = Path(state.code_artifacts["game_js_path"]).read_text(encoding="utf-8")
+    assert "game_ready" in game_js
+    assert update["debug_report"]["runtime_check"]["passed"] is True
+    assert update["debug_report"]["runtime_check"]["game_ready_signal_found"] is True
+    assert update["debug_report"]["unresolved_issues"] == []
+    assert any(
+        issue["kind"] == "game_ready_signal_missing"
+        for issue in update["debug_report"]["fixed_issues"]
+    )
 
 
 def test_debug_code_with_assets_stops_after_one_failed_repair_round(
@@ -215,3 +267,96 @@ def test_debug_code_with_assets_stops_after_one_failed_repair_round(
         for issue in update["debug_report"]["unresolved_issues"]
     )
     assert len(provider.calls) == 1
+
+
+def test_debug_code_with_assets_flags_non_interactive_title_card(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.coding_agent.debug_code_with_assets.node import (
+        debug_code_with_assets,
+    )
+
+    state = _build_state(tmp_path)
+    manifest_draft = {
+        "schemaVersion": "1.0",
+        "title": state.game_plan["title"],
+        "description": state.game_plan["introduction"],
+        "entry": "index.html",
+        "styles": ["style.css"],
+        "scripts": ["game.js"],
+        "assets": [],
+        "cover": "",
+        "controls": [state.game_plan["controls"]],
+        "runtime": "html5-iframe",
+    }
+    _write_bundle_files(
+        state,
+        index_html="<!doctype html><html><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+        style_css="body { margin: 0; }",
+        game_js=(
+            "const canvas=document.getElementById('game');"
+            "const ctx=canvas.getContext('2d');"
+            "function loop(){ctx.fillRect(0,0,canvas.width,canvas.height);"
+            "ctx.fillText('Title Card',24,40);"
+            "window.parent.postMessage({ type: 'game_ready' }, '*');"
+            "requestAnimationFrame(loop);}"
+            "loop();"
+        ),
+        manifest_draft=manifest_draft,
+    )
+
+    update = debug_code_with_assets(state)
+
+    assert update["debug_report"]["attempted"] is True
+    assert any(
+        issue["kind"] == "interaction_signal_missing"
+        for issue in update["debug_report"]["unresolved_issues"]
+    )
+
+
+def test_debug_code_with_assets_repairs_missing_game_ready_signal_without_provider(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.coding_agent.debug_code_with_assets.node import (
+        debug_code_with_assets,
+    )
+
+    state = _build_state(tmp_path)
+    manifest_draft = {
+        "schemaVersion": "1.0",
+        "title": state.game_plan["title"],
+        "description": state.game_plan["introduction"],
+        "entry": "index.html",
+        "styles": ["style.css"],
+        "scripts": ["game.js"],
+        "assets": [],
+        "cover": "",
+        "controls": [state.game_plan["controls"]],
+        "runtime": "html5-iframe",
+    }
+    _write_bundle_files(
+        state,
+        index_html="<!doctype html><html><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+        style_css="body { margin: 0; }",
+        game_js=(
+            "const canvas=document.getElementById('game');"
+            "const ctx=canvas.getContext('2d');"
+            "let x=0;"
+            "window.addEventListener('keydown',(event)=>{if(event.key==='ArrowRight')x+=4;});"
+            "function loop(){ctx.fillRect(0,0,canvas.width,canvas.height);"
+            "ctx.fillRect(x,20,20,20);requestAnimationFrame(loop);}"
+            "loop();"
+        ),
+        manifest_draft=manifest_draft,
+    )
+
+    update = debug_code_with_assets(state)
+    game_js = Path(state.code_artifacts["game_js_path"]).read_text(encoding="utf-8")
+
+    assert update["debug_report"]["runtime_check"]["game_ready_signal_found"] is True
+    assert update["debug_report"]["unresolved_issues"] == []
+    assert any(
+        issue["kind"] == "game_ready_signal_missing"
+        for issue in update["debug_report"]["fixed_issues"]
+    )
+    assert "window.parent.postMessage({ type: 'game_ready' }, '*');" in game_js

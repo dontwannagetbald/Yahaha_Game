@@ -46,7 +46,14 @@ app.include_router(uploads_router)
 async def http_exception_handler(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
-    message = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    detail_payload = exc.detail if isinstance(exc.detail, dict) else None
+    message = (
+        exc.detail
+        if isinstance(exc.detail, str)
+        else str(detail_payload.get("message") or "Request failed")
+        if detail_payload
+        else "Request failed"
+    )
     code_by_status = {
         401: "unauthorized",
         403: "forbidden",
@@ -55,10 +62,15 @@ async def http_exception_handler(
         413: "file_too_large",
         503: "service_unavailable",
     }
-    code = code_by_status.get(exc.status_code, "http_error")
+    code = str(detail_payload.get("code")) if detail_payload and detail_payload.get("code") else code_by_status.get(exc.status_code, "http_error")
+    error_body = {"code": code, "message": message}
+    if detail_payload and detail_payload.get("retry_hint") is not None:
+        error_body["retry_hint"] = detail_payload.get("retry_hint")
+    if detail_payload and detail_payload.get("details") is not None:
+        error_body["details"] = detail_payload.get("details")
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": {"code": code, "message": message}},
+        content={"error": error_body},
     )
 
 

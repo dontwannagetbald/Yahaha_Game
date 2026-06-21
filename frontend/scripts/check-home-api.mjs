@@ -4,10 +4,11 @@ import { resolve } from "node:path";
 const root = resolve(new URL(".", import.meta.url).pathname, "..");
 const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
 const home = readFileSync(resolve(root, "src/pages/HomePage.tsx"), "utf8");
-const api = readFileSync(resolve(root, "src/api/client.ts"), "utf8");
+const clientApi = readFileSync(resolve(root, "src/api/client.ts"), "utf8");
+const gamesApi = readFileSync(resolve(root, "src/api/games.ts"), "utf8");
 
 const requiredAppTokens = [
-  "import { getGameDetail, likePublishedGame, listPublishedGames } from \"./api/games\"",
+  "import { getGameDetail, likePublishedGame, listPublishedGames, publishGame } from \"./api/games\"",
   "const [games, setGames] = useState<Game[]>([])",
   "const [gamesError, setGamesError] = useState<UserFacingError | null>(null)",
   "async function handleLoadGames(",
@@ -32,6 +33,11 @@ const requiredHomeTokens = [
 ];
 
 const requiredApiTokens = [
+  "mapChineseTagToGameTag",
+  "params.set(\"tag\", mapChineseTagToGameTag(query.tag.trim()))",
+];
+
+const requiredClientApiTokens = [
   "credentials: \"include\"",
 ];
 
@@ -50,7 +56,13 @@ for (const token of requiredHomeTokens) {
 }
 
 for (const token of requiredApiTokens) {
-  if (!api.includes(token)) {
+  if (!gamesApi.includes(token)) {
+    failures.push(`Expected API client token missing: ${token}`);
+  }
+}
+
+for (const token of requiredClientApiTokens) {
+  if (!clientApi.includes(token)) {
     failures.push(`Expected API client token missing: ${token}`);
   }
 }

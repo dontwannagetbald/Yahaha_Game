@@ -92,6 +92,17 @@ class FailingConversationGraph:
         raise RuntimeError("模型没有返回可点击建议，请重试。")
 
 
+class DetailedFailingConversationGraph:
+    async def ainvoke(self, state: dict) -> dict:
+        error = RuntimeError("模型没有返回可点击建议，请重试。")
+        error.details = {
+            "reason": "provider_exception",
+            "missing_fields": ["title"],
+            "provider_error": "empty suggestions",
+        }
+        raise error
+
+
 class SilentUploadConversationGraph(FakeConversationGraph):
     async def ainvoke(self, state: dict) -> dict:
         result = await super().ainvoke(state)
@@ -299,6 +310,39 @@ def test_chat_event_returns_json_error_when_conversation_graph_fails(
 
     assert response.status_code == 502
     assert response.json()["error"]["message"] == "模型没有返回可点击建议，请重试。"
+
+
+def test_create_session_event_surfaces_structured_provider_error_details(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+):
+    import app.conversation_runner as runner_module
+
+    fake_graph = FakeConversationGraph()
+    monkeypatch.setattr(runner_module, "get_conversation_graph", lambda: fake_graph)
+    login(client, "graph-error-detail@example.com")
+    created = client.post(
+        "/api/create-sessions",
+        json={"initial_message": "先做一个初版"},
+    )
+    session_id = created.json()["session_id"]
+    monkeypatch.setattr(
+        runner_module, "get_conversation_graph", lambda: DetailedFailingConversationGraph()
+    )
+
+    response = client.post(
+        f"/api/create-sessions/{session_id}/events",
+        json={"type": "chat", "message": "继续"},
+    )
+
+    body = response.json()
+    assert response.status_code == 502
+    assert body["error"]["message"] == "模型没有返回可点击建议，请重试。"
+    assert body["error"]["retry_hint"] == "请稍后重试。"
+    assert body["error"]["details"] == {
+        "reason": "provider_exception",
+        "missing_fields": ["title"],
+        "provider_error": "empty suggestions",
+    }
 
 
 def test_create_session_initial_message_and_asset_binding(

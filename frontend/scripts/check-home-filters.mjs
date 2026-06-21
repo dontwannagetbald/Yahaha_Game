@@ -6,6 +6,7 @@ const home = readFileSync(resolve(root, "src/pages/HomePage.tsx"), "utf8");
 const css = readFileSync(resolve(root, "src/pages/home.css"), "utf8");
 
 const requiredTokens = [
+  "const filterOptions = [\"全部类型\", \"冒险\", \"动作\", \"策略\", \"解谜\", \"街机\", \"生存\", \"模拟\", \"竞速\", \"节奏\", \"角色扮演\", \"休闲\", \"教育\"]",
   'const [searchDraft, setSearchDraft] = useState("")',
   'const [searchQuery, setSearchQuery] = useState("")',
   "function applySearchQuery()",

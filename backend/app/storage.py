@@ -26,6 +26,12 @@ class PresignedUrlResult:
     expires_in: int
 
 
+@dataclass(frozen=True)
+class StoredObjectResult:
+    body: bytes
+    content_type: str
+
+
 class ObjectStorageService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -111,6 +117,44 @@ class ObjectStorageService:
                 Key=object_key,
                 Body=body,
                 ContentType=content_type,
+            )
+        except BotoCoreError as exc:
+            raise StorageUnavailableError(
+                "Object storage is unavailable"
+            ) from exc
+
+    def get_object(self, object_key: str) -> StoredObjectResult:
+        try:
+            response = self._s3_client.get_object(Bucket=self.bucket, Key=object_key)
+            body = response["Body"].read()
+            content_type = response.get("ContentType") or "application/octet-stream"
+            return StoredObjectResult(body=body, content_type=content_type)
+        except BotoCoreError as exc:
+            raise StorageUnavailableError(
+                "Object storage is unavailable"
+            ) from exc
+
+    def list_object_keys(self, prefix: str) -> list[str]:
+        try:
+            paginator = self._s3_client.get_paginator("list_objects_v2")
+            keys: list[str] = []
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=prefix.rstrip("/") + "/"):
+                for item in page.get("Contents", []):
+                    key = str(item.get("Key") or "")
+                    if key:
+                        keys.append(key)
+            return keys
+        except BotoCoreError as exc:
+            raise StorageUnavailableError(
+                "Object storage is unavailable"
+            ) from exc
+
+    def copy_object(self, *, source_key: str, destination_key: str) -> None:
+        try:
+            self._s3_client.copy_object(
+                Bucket=self.bucket,
+                CopySource={"Bucket": self.bucket, "Key": source_key},
+                Key=destination_key,
             )
         except BotoCoreError as exc:
             raise StorageUnavailableError(

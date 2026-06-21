@@ -26,7 +26,8 @@
     "test:create-chat-event": "node scripts/check-create-chat-event.mjs",
     "test:create-upload-assets": "node scripts/check-create-upload-assets.mjs",
     "test:create-agent-progress": "node scripts/check-create-agent-progress.mjs",
-    "test:create-publish": "node scripts/check-create-publish.mjs"
+    "test:create-publish": "node scripts/check-create-publish.mjs",
+    "test:create-redo-revision": "node scripts/check-create-redo-revision.mjs"
   },
   "dependencies": {
     "antd": "latest",

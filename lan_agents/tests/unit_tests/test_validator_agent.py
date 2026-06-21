@@ -147,7 +147,7 @@ def _write_valid_bundle(state: GenerationState) -> None:
     js_path = write_workspace_text(
         workspace,
         "game.js",
-        "const canvas = document.getElementById('game'); const ctx = canvas.getContext('2d'); const bg = 'assets/background.png'; const player = 'assets/player.png'; ctx.fillRect(0, 0, 10, 10); window.parent.postMessage({ type: 'game_ready' }, '*');",
+        "const canvas = document.getElementById('game'); const ctx = canvas.getContext('2d'); const bg = 'assets/background.png'; const player = 'assets/player.png'; let x = 0; window.addEventListener('keydown', (event) => { if (event.key === 'ArrowRight') { x += 4; } }); ctx.fillRect(0, 0, 10, 10); ctx.fillRect(x, 0, 10, 10); window.parent.postMessage({ type: 'game_ready' }, '*');",
     )
     manifest_path = write_workspace_text(
         workspace,
@@ -174,6 +174,7 @@ def _write_valid_bundle(state: GenerationState) -> None:
             "passed": True,
             "js_syntax_ok": True,
             "game_ready_signal_found": True,
+            "interaction_signal_found": True,
         },
         "unresolved_issues": [],
     }
@@ -378,3 +379,53 @@ def test_validate_final_delivery_deduplicates_runtime_check_failure_details(
         runtime_issue["message"].count("node is unavailable for JS syntax validation")
         == 1
     )
+
+
+def test_validate_final_delivery_rejects_non_interactive_title_card(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.validator_agent.validate_final_delivery.node import (
+        validate_final_delivery,
+    )
+
+    state = _build_validated_state(tmp_path)
+    js_path = Path(state.code_artifacts["game_js_path"])
+    js_path.write_text(
+        "const canvas=document.getElementById('game');"
+        "const ctx=canvas.getContext('2d');"
+        "function loop(){ctx.fillRect(0,0,10,10);"
+        "ctx.fillText('Title Card',24,40);"
+        "window.parent.postMessage({ type: 'game_ready' }, '*');"
+        "requestAnimationFrame(loop);}"
+        "loop();",
+        encoding="utf-8",
+    )
+    state.debug_report["runtime_check"] = {
+        "passed": False,
+        "entry_exists": True,
+        "game_js_exists": True,
+        "html_has_canvas": True,
+        "html_references_game_js": True,
+        "node_available": True,
+        "js_syntax_ok": True,
+        "syntax_error": "",
+        "game_ready_signal_found": True,
+        "render_signal_found": True,
+        "interaction_signal_found": False,
+    }
+    state.debug_report["unresolved_issues"] = [
+        {
+            "kind": "interaction_signal_missing",
+            "message": "game.js does not appear to register player input controls",
+        }
+    ]
+
+    update = validate_final_delivery(state)
+
+    runtime_issue = next(
+        issue
+        for issue in update["validation_report"]["issues"]
+        if issue["kind"] == "runtime_check_failed"
+    )
+    assert update["generation_status"] == "failed"
+    assert "player input controls missing" in runtime_issue["message"]

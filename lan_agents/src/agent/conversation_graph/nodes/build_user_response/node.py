@@ -6,7 +6,6 @@ from typing import Any
 
 from agent.conversation_graph.nodes._helpers import (
     card_from_game_plan,
-    followup_for_missing_fields,
     missing_confirmable_game_plan_fields,
 )
 from agent.conversation_graph.services.tone import (
@@ -31,7 +30,6 @@ def build_user_response(state: ConversationState) -> dict[str, Any]:
             },
         }
     if missing_fields:
-        followup = followup_for_missing_fields(missing_fields)
         if state.assistant_response.get("message") or state.assistant_response.get(
             "suggestions"
         ):
@@ -53,12 +51,8 @@ def build_user_response(state: ConversationState) -> dict[str, Any]:
         return {
             "conversation_status": "collecting",
             "assistant_response": {
-                "message": friendly_design_message(
-                    followup["message"],
-                    missing_fields=missing_fields,
-                    game_plan=state.game_plan,
-                ),
-                "suggestions": followup["suggestions"],
+                "message": "",
+                "suggestions": [],
                 "card": None,
                 "actions": [],
             },

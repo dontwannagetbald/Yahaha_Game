@@ -1,6 +1,6 @@
 import { requestJson } from "./client";
 
-import { toUiGame, type RawGame } from "../lib/games";
+import { mapChineseTagToGameTag, toUiGame, type RawGame } from "../lib/games";
 import type { Game, GameSortParam } from "../types/ui";
 
 export type GamesQuery = {
@@ -31,7 +31,7 @@ function buildGamesQuery(query: GamesQuery): string {
   }
 
   if (query.tag?.trim()) {
-    params.set("tag", query.tag.trim());
+    params.set("tag", mapChineseTagToGameTag(query.tag.trim()));
   }
 
   return params.toString();

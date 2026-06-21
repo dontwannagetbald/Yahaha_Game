@@ -35,8 +35,23 @@ const requiredPageTokens = [
   "shouldShowGenerateEmptyState ? (",
   "shouldShowGenerateEmptyState ? \"empty\" : currentJobStatus === \"succeeded\" ? \"succeeded\" : \"in-progress\"",
   "currentJobStatus === \"succeeded\" ? (",
-  "重做",
-  "onRedoGeneratedGame",
+  "const previewUrls = getPreviewUrls(selectedTask);",
+  "const previewCoverUrl = getPreviewCoverUrl(selectedTask);",
+  "const [startedPreviewTaskIds, setStartedPreviewTaskIds] = useState<Record<string, true>>({});",
+  "const hasStartedPreview = selectedTask ? Boolean(startedPreviewTaskIds[selectedTask.job_id]) : false;",
+  "className=\"preview-frame preview-sandbox\"",
+  "!hasStartedPreview ? (",
+  "className=\"preview-cover-stage\"",
+  "className=\"preview-cover-panel\"",
+  "开始游玩",
+  "setStartedPreviewTaskIds((current) => ({",
+  "className=\"preview-runtime-shell\"",
+  "className=\"preview-sandbox-iframe\"",
+  "sandbox=\"allow-scripts allow-same-origin\"",
+  "title={selectedTask?.title ?? \"游戏预览\"}",
+  "previewUrls?.bundleUrl ? (",
+  "className=\"preview-bundle-link\"",
+  "Bundle URL",
   "className=\"agent-status-scroll\"",
 ];
 
@@ -74,7 +89,14 @@ const requiredCssTokens = [
   "flex: 1 1 420px",
   "gap: 12px",
   "padding: 12px 18px 18px",
-  "padding: 12px 14px",
+  ".create-page .preview-frame.preview-sandbox",
+  ".create-page .preview-cover-stage",
+  ".create-page .preview-cover-panel",
+  ".create-page .preview-runtime-shell",
+  ".create-page .preview-start-button",
+  ".create-page .preview-sandbox-iframe",
+  ".create-page .preview-bundle-link",
+  ".create-page .preview-frame.preview-sandbox canvas",
 ];
 
 const failures = [];
@@ -166,15 +188,25 @@ if (agentLogIndex === -1 || progressRowIndex === -1 || agentLogIndex > progressR
 }
 
 if (
-  !/shouldShowGenerateEmptyState\s*\?\s*\([\s\S]*generate-panel-empty-state[\s\S]*\)\s*:\s*currentJobStatus === "succeeded"\s*\?\s*\([\s\S]*className="workspace-head"[\s\S]*className="preview-frame preview-sandbox"[\s\S]*发布[\s\S]*重做[\s\S]*\)\s*:\s*\([\s\S]*className="workspace-head"[\s\S]*className="agent-log"[\s\S]*className="progress-row"[\s\S]*\)/.test(
+  !/shouldShowGenerateEmptyState\s*\?\s*\([\s\S]*generate-panel-empty-state[\s\S]*\)\s*:\s*currentJobStatus === "succeeded"\s*\?\s*\([\s\S]*className="workspace-head"[\s\S]*className="preview-frame preview-sandbox"[\s\S]*发布[\s\S]*\)\s*:\s*\([\s\S]*className="workspace-head"[\s\S]*className="agent-log"[\s\S]*className="progress-row"[\s\S]*\)/.test(
     createPage,
   )
 ) {
   failures.push("Expected CreatePage workspace panel to render empty state before confirmation, sandbox on success, and progress sections while jobs are running");
 }
 
-if (!/onClick=\{\(\) => void onRedoGeneratedGame\(\)\}[\s\S]*重做/.test(createPage)) {
-  failures.push("Expected succeeded workspace redo button to trigger onRedoGeneratedGame.");
+if (
+  !/currentJobStatus === "succeeded"\s*\?\s*\([\s\S]*className="preview-frame preview-sandbox"[\s\S]*!hasStartedPreview\s*\?\s*\([\s\S]*className="preview-cover-stage"[\s\S]*开始游玩[\s\S]*\)\s*:\s*previewUrls\?\.iframeSrc\s*\?\s*\([\s\S]*className="preview-runtime-shell"[\s\S]*<iframe[\s\S]*className="preview-sandbox-iframe"[\s\S]*previewUrls\?\.bundleUrl[\s\S]*className="preview-bundle-link"/s.test(
+    createPage,
+  )
+) {
+  failures.push(
+    "Expected succeeded CreatePage workspace panel to render a cover gate first, then mount the preview iframe only after 开始游玩, while keeping the bundle URL link.",
+  );
+}
+
+if (createPage.includes("onRedoGeneratedGame") || createPage.includes("重做")) {
+  failures.push("Expected succeeded workspace panel to remove the old right-panel redo button.");
 }
 
 if (!createPage.includes("const [tasksExpanded, setTasksExpanded] = useState(false);")) {
@@ -187,6 +219,38 @@ if (createCss.includes("#6f4bc8")) {
 
 if (createCss.includes('images.unsplash.com/photo-1511512578047-dfb367046420')) {
   failures.push("Expected preview frame to avoid a hard-coded background image");
+}
+
+if (
+  !/\.create-page \.preview-frame\.preview-sandbox\s*\{[^}]*position:\s*relative;[^}]*overflow:\s*hidden;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview sandbox to clip overflowing game content.");
+}
+
+if (
+  !/\.create-page \.preview-runtime-shell\s*\{[^}]*padding:\s*10px 12px 10px 16px;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview runtime shell to reserve safe inset space so the game does not clip against the right edge.");
+}
+
+if (
+  !/\.create-page \.preview-sandbox-iframe\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*min-width:\s*0;[^}]*min-height:\s*0;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview iframe to stretch inside the runtime shell without overflowing.");
+}
+
+if (
+  !/\.create-page \.preview-frame\.preview-sandbox canvas\s*\{[^}]*max-width:\s*100%;[^}]*max-height:\s*100%;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview sandbox canvas to stay within the panel bounds.");
 }
 
 if (failures.length > 0) {

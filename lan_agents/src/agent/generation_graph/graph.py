@@ -21,7 +21,7 @@ from agent.generation_graph.tools.workspace import prepare_workspace, write_work
 from agent.generation_graph.validator_agent.validate_final_delivery.node import (
     validate_final_delivery,
 )
-from agent.providers import MockLLMProvider
+from agent.providers import MockLLMProvider, ProviderConfig, provider_from_env
 
 
 def init_generation_context(state: GenerationState) -> dict[str, Any]:
@@ -64,7 +64,7 @@ def orchestrate_generation(state: GenerationState) -> dict[str, Any]:
 
 
 def draft_game_code(state: GenerationState) -> dict[str, Any]:
-    update = draft_code(state, provider=MockLLMProvider(response=_mock_code_response(state)))
+    update = draft_code(state, provider=_coding_provider_from_env(state))
     if not state.asset_manifest_plan:
         update["processed_assets"] = []
         update["asset_analysis"] = []
@@ -185,6 +185,13 @@ def route_after_validation(state: GenerationState) -> Literal["success", "failur
     return "failure"
 
 
+def _coding_provider_from_env(state: GenerationState):
+    provider_name = ProviderConfig.from_env().provider.lower()
+    if provider_name == "mock":
+        return MockLLMProvider(response=_mock_code_response(state))
+    return provider_from_env()
+
+
 def _mock_code_response(state: GenerationState) -> dict[str, Any]:
     asset_paths = {
         str(item.get("target_path") or "")
@@ -222,6 +229,7 @@ def _mock_code_response(state: GenerationState) -> dict[str, Any]:
             "const w=canvas.width,h=canvas.height;"
             f"{background_setup}{player_setup}"
             "const player={x:w/2,y:h-90};"
+            "window.addEventListener('keydown',(event)=>{if(event.key==='ArrowLeft'||event.key==='a'){player.x=Math.max(28,player.x-18);}if(event.key==='ArrowRight'||event.key==='d'){player.x=Math.min(w-28,player.x+18);}});"
             "function drawBackground(){const g=ctx.createLinearGradient(0,0,0,h);g.addColorStop(0,'#203a31');g.addColorStop(1,'#101418');ctx.fillStyle=g;ctx.fillRect(0,0,w,h);ctx.fillStyle='#ffc200';for(let i=0;i<16;i++){ctx.beginPath();ctx.arc(60+i*55,80+(i%4)*55,6,0,7);ctx.fill();}}"
             "function drawPlayer(){ctx.fillStyle='#f7c67a';ctx.beginPath();ctx.arc(player.x,player.y,28,0,7);ctx.fill();ctx.fillStyle='#fff';ctx.fillRect(player.x-10,player.y-8,7,7);ctx.fillRect(player.x+5,player.y-8,7,7);}"
             "function loop(){"

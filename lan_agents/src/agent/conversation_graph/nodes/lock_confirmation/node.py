@@ -6,7 +6,6 @@ from typing import Any
 
 from agent.conversation_graph.nodes._helpers import (
     assets_missing_usage,
-    followup_for_missing_fields,
     missing_game_plan_fields,
 )
 from agent.state import ConversationState, default_assistant_response
@@ -17,13 +16,12 @@ def lock_confirmation(state: ConversationState) -> dict[str, Any]:
     missing_fields = missing_game_plan_fields(state.game_plan)
     missing_assets = assets_missing_usage(state.material_usage)
     if missing_fields:
-        followup = followup_for_missing_fields(missing_fields)
         return {
             "handoff_to_generation": False,
             "conversation_status": "collecting",
             "assistant_response": {
-                "message": f"还不能开始生成。{followup['message']}",
-                "suggestions": followup["suggestions"],
+                "message": "还不能开始生成，当前游戏方案还有必填信息没有补齐，请继续和 Design Agent 完善方案。",
+                "suggestions": [],
                 "card": None,
                 "actions": [],
             },

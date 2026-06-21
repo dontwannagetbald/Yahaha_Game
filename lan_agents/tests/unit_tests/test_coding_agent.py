@@ -173,6 +173,7 @@ def test_draft_code_prompt_enforces_compact_json_safe_bundle_output(
     assert "compact" in system_prompt.lower()
     assert "single quotes" in system_prompt.lower()
     assert "valid json strings" in system_prompt.lower()
+    assert "game_ready" in system_prompt
 
 
 def test_draft_code_uses_deterministic_temperature_for_real_provider(
@@ -211,6 +212,34 @@ def test_draft_code_accepts_single_string_coding_note(tmp_path: Path) -> None:
     update = draft_code(state, provider=provider)
 
     assert update["coding_notes"] == ["keep runtime simple"]
+
+
+def test_draft_code_adds_required_game_ready_signal_when_provider_omits_it(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.coding_agent.draft_code.node import draft_code
+
+    state = _build_coding_state(tmp_path)
+    state.asset_manifest_plan = []
+    state.development_brief["allowed_asset_paths"] = []
+    provider = MockLLMProvider(
+        response={
+            "index_html": "<!doctype html><html><head><link rel='stylesheet' href='style.css'></head><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+            "style_css": "body { margin: 0; background: #101418; }",
+            "game_js": (
+                "const canvas=document.getElementById('game');"
+                "const ctx=canvas.getContext('2d');"
+                "window.addEventListener('keydown',()=>{});"
+                "ctx.fillRect(0,0,canvas.width,canvas.height);"
+            ),
+            "coding_notes": ["provider omitted ready signal"],
+        }
+    )
+
+    update = draft_code(state, provider=provider)
+    game_js = Path(update["code_artifacts"]["game_js_path"]).read_text(encoding="utf-8")
+
+    assert "window.parent.postMessage({ type: 'game_ready' }, '*');" in game_js
 
 
 def test_draft_code_retries_once_when_provider_returns_invalid_json(

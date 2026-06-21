@@ -54,24 +54,14 @@ class OpenAICompatibleLLMProvider:
             "response_format": {"type": "json_object"},
         }
         endpoint = self._chat_completions_url(self._config.base_url)
-        http_request = request.Request(
-            endpoint,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self._config.api_key}",
-                "Content-Type": "application/json",
-            },
-            method="POST",
-        )
         try:
-            with request.urlopen(  # nosec B310 - endpoint is configured server-side.
-                http_request, timeout=self._config.timeout_seconds
-            ) as response:
-                raw = response.read().decode("utf-8")
-        except error.HTTPError as exc:
-            detail = exc.read(500).decode("utf-8", "replace").strip()
-            suffix = f": {_safe_preview(detail)}" if detail else ""
-            raise ProviderError(f"LLM provider HTTP error: {exc.code}{suffix}") from exc
+            raw = self._post_json(endpoint, payload, "LLM provider HTTP error")
+        except ProviderError as exc:
+            if not _requests_max_completion_tokens(str(exc)):
+                raise
+            retry_payload = dict(payload)
+            retry_payload["max_completion_tokens"] = retry_payload.pop("max_tokens")
+            raw = self._post_json(endpoint, retry_payload, "LLM provider HTTP error")
         except OSError as exc:
             raise ProviderError("LLM provider request failed") from exc
 
@@ -134,6 +124,26 @@ class OpenAICompatibleLLMProvider:
         finally:
             for file_id in uploaded_file_ids:
                 self._delete_uploaded_file(file_id)
+
+    def _post_json(self, endpoint: str, payload: dict[str, Any], error_prefix: str) -> str:
+        http_request = request.Request(
+            endpoint,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self._config.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with request.urlopen(  # nosec B310 - endpoint is configured server-side.
+                http_request, timeout=self._config.timeout_seconds
+            ) as response:
+                return response.read().decode("utf-8")
+        except error.HTTPError as exc:
+            detail = exc.read(500).decode("utf-8", "replace").strip()
+            suffix = f": {_safe_preview(detail)}" if detail else ""
+            raise ProviderError(f"{error_prefix}: {exc.code}{suffix}") from exc
 
     def _upload_reference_attachment(self, attachment: dict[str, Any]) -> str:
         local_path = str(attachment.get("local_path") or "").strip()
@@ -390,3 +400,12 @@ def _extract_first_json_object(content: str) -> dict[str, Any]:
 
 def _safe_preview(content: str) -> str:
     return " ".join(content.strip().split())[:160]
+
+
+def _requests_max_completion_tokens(message: str) -> bool:
+    normalized = message.lower()
+    return (
+        "max_completion_tokens" in normalized
+        and "max_tokens" in normalized
+        and "unsupported parameter" in normalized
+    )

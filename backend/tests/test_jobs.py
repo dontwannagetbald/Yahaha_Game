@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import uuid
 
 import pytest
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app import jobs as jobs_module
 from app.db import get_session as app_get_session
 from app.main import app
 from app.models import AgentLog, Base, CreateSession, Game, GenerationJob, UploadedAsset, User
@@ -183,6 +185,104 @@ def test_create_job_from_confirmed_session_snapshots_plan_and_assets(
     asyncio.run(inspect())
 
 
+def test_job_detail_exposes_browser_accessible_artifact_urls(
+    client: TestClient, session_factory, tmp_path: Path
+):
+    login(client, "owner@example.com")
+    workspace = tmp_path / "artifact"
+    workspace.mkdir()
+    (workspace / "manifest.json").write_text(
+        '{"entry":"index.html","runtime":"html5-iframe"}',
+        encoding="utf-8",
+    )
+    (workspace / "index.html").write_text("<!doctype html><html></html>", encoding="utf-8")
+    job_id = uuid.uuid4()
+
+    async def seed_job() -> None:
+        async with session_factory() as session:
+            owner = (
+                await session.execute(select(User).where(User.email == "owner@example.com"))
+            ).scalar_one()
+            game = Game(
+                owner_id=owner.user_id,
+                title="预览测试游戏",
+                description="draft",
+                cover_url="https://example.com/cover.png",
+                tags=["casual"],
+                status="draft",
+            )
+            session.add(game)
+            await session.flush()
+            job = GenerationJob(
+                id=job_id,
+                user_id=owner.user_id,
+                prompt="预览测试",
+                status="succeeded",
+                user_requirements={},
+                game_plan={"title": "预览测试"},
+                material_usage={"assets": []},
+                game_id=game.id,
+                artifact_prefix=str(workspace),
+                manifest_url=str(workspace / "manifest.json"),
+            )
+            session.add(job)
+            await session.commit()
+
+    asyncio.run(seed_job())
+
+    detail = client.get(f"/api/jobs/{job_id}")
+
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["manifest_url"] == f"/api/jobs/{job_id}/artifacts/manifest.json"
+    assert body["artifact_base_url"] == f"/api/jobs/{job_id}/artifacts/"
+    assert body["artifact_prefix"] == str(workspace)
+    assert body["cover_url"] == "https://example.com/cover.png"
+
+    artifact = client.get(f"/api/jobs/{job_id}/artifacts/index.html")
+
+    assert artifact.status_code == 200
+    assert "<!doctype html>" in artifact.text
+
+
+def test_missing_legacy_local_artifact_returns_404_without_storage_lookup(
+    client: TestClient, session_factory, tmp_path: Path
+):
+    class ExplodingStorage:
+        def get_object(self, object_key: str):
+            raise AssertionError(f"unexpected storage lookup: {object_key}")
+
+    app.dependency_overrides[jobs_module.get_storage_service] = lambda: ExplodingStorage()
+    login(client, "owner@example.com")
+    missing_workspace = tmp_path / "missing-artifact"
+    job_id = uuid.uuid4()
+
+    async def seed_job() -> None:
+        async with session_factory() as session:
+            owner = (
+                await session.execute(select(User).where(User.email == "owner@example.com"))
+            ).scalar_one()
+            job = GenerationJob(
+                id=job_id,
+                user_id=owner.user_id,
+                prompt="旧本地路径测试",
+                status="succeeded",
+                user_requirements={},
+                game_plan={"title": "旧本地路径测试"},
+                material_usage={"assets": []},
+                artifact_prefix=str(missing_workspace),
+                manifest_url=str(missing_workspace / "manifest.json"),
+            )
+            session.add(job)
+            await session.commit()
+
+    asyncio.run(seed_job())
+
+    response = client.get(f"/api/jobs/{job_id}/artifacts/index.html")
+
+    assert response.status_code == 404
+
+
 def test_create_job_requires_owned_confirmed_session_and_allows_rerun(
     client: TestClient, session_factory
 ):
@@ -313,6 +413,109 @@ def test_list_detail_and_logs_permissions(client: TestClient, session_factory):
         assert other_client.get(f"/api/jobs/{second_id}/logs").status_code == 404
     finally:
         other_client.close()
+
+
+def test_delete_job_removes_only_owned_task_history(
+    client: TestClient, session_factory
+):
+    login(client, "owner@example.com")
+    session_id = create_confirmed_session(client, session_factory)
+    created = client.post("/api/jobs", json={"session_id": session_id})
+    job_id = created.json()["job_id"]
+
+    async def seed_logs() -> None:
+        async with session_factory() as session:
+            job = await session.get(GenerationJob, uuid.UUID(job_id))
+            session.add(
+                AgentLog(
+                    job_id=job.id,
+                    step="orchestrator",
+                    level="info",
+                    message="任务已进入编排。",
+                    created_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
+
+    asyncio.run(seed_logs())
+
+    deleted = client.delete(f"/api/jobs/{job_id}")
+
+    assert deleted.status_code == 204
+    assert client.get(f"/api/jobs/{job_id}").status_code == 404
+    assert client.get("/api/jobs").json()["jobs"] == []
+
+    async def inspect() -> None:
+        async with session_factory() as session:
+            job = await session.get(GenerationJob, uuid.UUID(job_id))
+            create_session = await session.get(CreateSession, uuid.UUID(session_id))
+            logs = (
+                await session.execute(
+                    select(AgentLog).where(AgentLog.job_id == uuid.UUID(job_id))
+                )
+            ).scalars().all()
+            assert job is None
+            assert create_session is not None
+            assert logs == []
+
+    asyncio.run(inspect())
+
+
+def test_delete_job_hides_non_owner_task_history(client: TestClient, session_factory):
+    login(client, "owner@example.com")
+    session_id = create_confirmed_session(client, session_factory)
+    created = client.post("/api/jobs", json={"session_id": session_id})
+    job_id = created.json()["job_id"]
+
+    client.post("/api/auth/logout")
+    login(client, "viewer@example.com")
+
+    deleted = client.delete(f"/api/jobs/{job_id}")
+
+    assert deleted.status_code == 404
+
+
+def test_delete_job_rejects_pending_or_running_task_history(
+    client: TestClient, session_factory
+):
+    login(client, "owner@example.com")
+    session_id = create_confirmed_session(client, session_factory)
+    pending_job_id = uuid.uuid4()
+    running_job_id = uuid.uuid4()
+
+    async def seed_jobs() -> None:
+        async with session_factory() as session:
+            owner = (
+                await session.execute(select(User).where(User.email == "owner@example.com"))
+            ).scalar_one()
+            create_session = await session.get(CreateSession, uuid.UUID(session_id))
+            for job_id, status in [
+                (pending_job_id, "pending"),
+                (running_job_id, "running"),
+            ]:
+                session.add(
+                    GenerationJob(
+                        id=job_id,
+                        user_id=owner.user_id,
+                        prompt="做一个猫咪跑酷游戏",
+                        confirmation={"title": "猫咪跑酷"},
+                        create_session_id=create_session.id,
+                        user_requirements=create_session.user_requirements,
+                        game_plan=create_session.game_plan,
+                        material_usage=create_session.material_usage,
+                        status=status,
+                        created_at=datetime.now(timezone.utc),
+                    )
+                )
+            await session.commit()
+
+    asyncio.run(seed_jobs())
+
+    pending_delete = client.delete(f"/api/jobs/{pending_job_id}")
+    running_delete = client.delete(f"/api/jobs/{running_job_id}")
+
+    assert pending_delete.status_code == 409
+    assert running_delete.status_code == 409
 
 
 def test_revision_job_rejects_pending_or_running_source_job(

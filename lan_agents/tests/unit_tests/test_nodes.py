@@ -60,9 +60,10 @@ def test_update_requirements_merges_first_chat_message() -> None:
     requirements = update["user_requirements"]
 
     assert "可爱风格" in requirements["intent_summary"]
-    assert "躲避障碍" in requirements["must_have"]
-    assert requirements["preference_profile"]["visual_style"] == "可爱"
-    assert requirements["preference_profile"]["genre_candidates"]
+    assert requirements["must_have"] == []
+    assert requirements["preference_profile"] == ConversationState().user_requirements[
+        "preference_profile"
+    ]
     assert requirements["revision_count"] == 1
 
 
@@ -81,8 +82,8 @@ def test_update_requirements_keeps_existing_must_haves_when_user_adds_detail() -
     requirements = update["user_requirements"]
 
     assert "躲避障碍" in requirements["must_have"]
-    assert "收集星星" in requirements["must_have"]
-    assert requirements["preference_profile"]["difficulty"] == "easy"
+    assert "收集星星" not in requirements["must_have"]
+    assert requirements["preference_profile"]["difficulty"] is None
     assert requirements["revision_count"] == 2
 
 
@@ -157,7 +158,7 @@ def test_build_user_response_with_incomplete_plan_asks_followup_without_card() -
 
     assert response["card"] is None
     assert response["actions"] == []
-    assert response["message"]
+    assert response["message"] == ""
     assert response["suggestions"] == []
 
 

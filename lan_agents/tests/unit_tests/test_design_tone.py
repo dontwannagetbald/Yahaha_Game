@@ -112,7 +112,13 @@ def test_build_user_response_uses_friendly_icon_for_followup() -> None:
             **ConversationState().game_plan,
             "plan_id": "plan-cat",
             "title": "星星小猫",
-        }
+        },
+        assistant_response={
+            "message": "我们继续补齐几个关键设定：玩家主要做什么？",
+            "suggestions": ["收集星星躲滚石", "跳跃闯关到终点"],
+            "card": None,
+            "actions": [],
+        },
     )
 
     response = build_user_response(state)["assistant_response"]

@@ -12,6 +12,7 @@ from agent.generation_graph.tools.asset_references import (
     collect_asset_references_from_bundle,
 )
 from agent.generation_graph.tools.runtime_check import run_headless_runtime_check
+from agent.generation_graph.tools.runtime_protocol import ensure_game_ready_signal
 from agent.generation_graph.tools.workspace import write_workspace_text
 from agent.providers import LLMMessage, LLMProvider, ProviderError
 
@@ -49,6 +50,7 @@ Rules:
 - keep output compact and JSON-safe
 - prefer single quotes inside HTML, CSS, and JS
 - preserve sandbox-safe static HTML5 runtime rules
+- game_js must call window.parent.postMessage({ type: 'game_ready' }, '*') after initialization so Play can mark the iframe ready
 """.strip()
 
 
@@ -67,10 +69,43 @@ def debug_code_with_assets(
         initial_asset_check, initial_runtime_check
     )
 
-    if provider and _needs_repair(initial_asset_check, initial_runtime_check):
+    deterministic_ready_repair = _repair_missing_game_ready_signal_if_safe(
+        state, bundle_context, initial_runtime_check
+    )
+
+    if deterministic_ready_repair:
+        bundle_context = _build_bundle_context(state)
+        _sync_manifest_draft_with_bundle(state, bundle_context)
+        bundle_context = _build_bundle_context(state)
+        final_asset_check = check_asset_references(bundle_context)
+        final_runtime_check = run_headless_runtime_check(
+            str(bundle_context["code_artifacts"]["index_html_path"])
+        )
+        fixed_issues = _collect_fixed_issues(
+            initial_asset_check,
+            initial_runtime_check,
+            final_asset_check,
+            final_runtime_check,
+        )
+        unresolved_issues = _collect_unresolved_issues(
+            final_asset_check, final_runtime_check
+        )
+        asset_check = final_asset_check
+        runtime_check = final_runtime_check
+        repair_notes = deterministic_ready_repair
+    elif provider and _needs_repair(initial_asset_check, initial_runtime_check):
         repair_update = _attempt_repair(state, bundle_context, provider)
         if repair_update:
             bundle_context = _build_bundle_context(state)
+            provider_runtime_check = run_headless_runtime_check(
+                str(bundle_context["code_artifacts"]["index_html_path"])
+            )
+            deterministic_ready_repair = _repair_missing_game_ready_signal_if_safe(
+                state, bundle_context, provider_runtime_check
+            )
+            if deterministic_ready_repair:
+                repair_update = [*repair_update, *deterministic_ready_repair]
+                bundle_context = _build_bundle_context(state)
             _sync_manifest_draft_with_bundle(state, bundle_context)
             bundle_context = _build_bundle_context(state)
             final_asset_check = check_asset_references(bundle_context)
@@ -179,6 +214,25 @@ def _attempt_repair(
         )
         state.code_artifacts["manifest_draft_path"] = str(manifest_path)
     return repair_notes
+
+
+def _repair_missing_game_ready_signal_if_safe(
+    state: GenerationState,
+    bundle_context: dict[str, Any],
+    runtime_check: dict[str, Any],
+) -> list[str]:
+    if not runtime_check.get("js_syntax_ok"):
+        return []
+    if runtime_check.get("game_ready_signal_found"):
+        return []
+    game_js_path = Path(bundle_context["code_artifacts"]["game_js_path"])
+    current_js = game_js_path.read_text(encoding="utf-8")
+    next_js = ensure_game_ready_signal(current_js)
+    if next_js == current_js:
+        return []
+    write_workspace_text(Path(state.artifact_workspace), "game.js", next_js)
+    state.code_artifacts["game_js_path"] = str(game_js_path)
+    return ["restored game_ready signal with deterministic runtime protocol guard"]
 
 
 def _sync_manifest_draft_with_bundle(
@@ -294,6 +348,14 @@ def _collect_unresolved_issues(
                 "message": "game.js does not appear to render a visible scene",
             }
         )
+    if runtime_check["js_syntax_ok"] and not runtime_check.get("interaction_signal_found", True):
+        issues.append(
+            {
+                "kind": "interaction_signal_missing",
+                "code": "interaction_signal_missing",
+                "message": "game.js does not appear to register player input controls",
+            }
+        )
     return issues
 
 
@@ -342,6 +404,16 @@ def _collect_fixed_issues(
             {
                 "kind": "game_ready_signal_missing",
                 "message": "Restored game_ready signal",
+            }
+        )
+    if (
+        not initial_runtime_check.get("interaction_signal_found", True)
+        and final_runtime_check.get("interaction_signal_found", False)
+    ):
+        fixed.append(
+            {
+                "kind": "interaction_signal_missing",
+                "message": "Restored player input controls",
             }
         )
     return fixed

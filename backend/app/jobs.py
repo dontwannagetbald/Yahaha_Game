@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import mimetypes
 import re
 import uuid
-from inspect import signature
 from datetime import datetime, timezone
+from inspect import signature
+from pathlib import Path
 from typing import Annotated, Any, Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agent_runner import (
@@ -20,12 +24,19 @@ from app.agent_runner import (
     get_agent_runner,
 )
 from app.auth import get_current_user
+from app.config import settings
 from app.db import get_session
 from app.models import AgentLog, CreateSession, Game, GenerationJob, UploadedAsset, User
+from app.storage import ObjectStorageService, StorageUnavailableError
 
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 SENSITIVE_PATTERN = re.compile(r"(token|secret|password|code)", re.IGNORECASE)
+DRAFT_VERSION = "v1"
+
+
+def get_storage_service() -> ObjectStorageService:
+    return ObjectStorageService(settings)
 
 
 class CreateJobRequest(BaseModel):
@@ -43,6 +54,7 @@ def _serialize_job(job: GenerationJob) -> dict[str, Any]:
         or (job.confirmation or {}).get("title")
         or "Untitled Job"
     )
+    manifest_url = _job_manifest_url(job)
     return {
         "job_id": str(job.id),
         "session_id": str(job.create_session_id) if job.create_session_id else None,
@@ -53,17 +65,33 @@ def _serialize_job(job: GenerationJob) -> dict[str, Any]:
         "started_at": job.started_at.isoformat() if job.started_at else None,
         "finished_at": job.finished_at.isoformat() if job.finished_at else None,
         "game_id": str(job.game_id) if job.game_id else None,
+        "cover_url": job.game.cover_url if job.game else None,
         "result_summary": job.result_summary,
         "error_message": _sanitize_log_message(job.error_message) if job.error_message else None,
         "validation_report": job.validation_report,
         "artifact_prefix": job.artifact_prefix,
-        "manifest_url": job.manifest_url,
+        "manifest_url": manifest_url,
+        "artifact_base_url": _job_artifact_base_url(job),
         "confirmation": job.confirmation,
         "user_requirements": job.user_requirements,
         "game_plan": job.game_plan,
         "material_usage": job.material_usage,
         "prompt": job.prompt,
     }
+
+
+def _job_artifact_base_url(job: GenerationJob) -> str | None:
+    if job.artifact_prefix:
+        return f"/api/jobs/{job.id}/artifacts/"
+    if job.manifest_url:
+        return job.manifest_url.rsplit("/", 1)[0] + "/"
+    return None
+
+
+def _job_manifest_url(job: GenerationJob) -> str | None:
+    if job.artifact_prefix:
+        return f"/api/jobs/{job.id}/artifacts/manifest.json"
+    return job.manifest_url
 
 
 def _confirmation_from_game_plan(game_plan: dict[str, Any]) -> dict[str, Any]:
@@ -89,10 +117,120 @@ def _sanitize_error_message(error: Exception) -> str:
 async def _get_owned_job(
     db: AsyncSession, *, job_id: uuid.UUID, user_id: uuid.UUID
 ) -> GenerationJob:
-    job = await db.get(GenerationJob, job_id)
-    if job is None or job.user_id != user_id:
+    job = (
+        await db.execute(
+            select(GenerationJob)
+            .options(selectinload(GenerationJob.game))
+            .where(GenerationJob.id == job_id, GenerationJob.user_id == user_id)
+        )
+    ).scalar_one_or_none()
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+def _artifact_file_path(job: GenerationJob, relative_path: str) -> Path | None:
+    raw_workspace = Path(str(job.artifact_prefix or "")).expanduser()
+    workspace = raw_workspace.resolve()
+    if not job.artifact_prefix:
+        return None
+    if not workspace.exists() or not workspace.is_dir():
+        if raw_workspace.is_absolute():
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        return None
+    normalized = relative_path.strip().replace("\\", "/")
+    if not normalized or normalized.startswith("/") or ".." in normalized.split("/"):
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    path = (workspace / normalized).resolve()
+    try:
+        path.relative_to(workspace)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="Artifact not found") from exc
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return path
+
+
+def _artifact_object_key(job: GenerationJob, relative_path: str) -> str:
+    prefix = str(job.artifact_prefix or "").strip().strip("/")
+    normalized = relative_path.strip().replace("\\", "/")
+    if not prefix or not normalized or normalized.startswith("/") or ".." in normalized.split("/"):
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    return f"{prefix}/{normalized}"
+
+
+def _artifact_proxy_base_url(job_id: uuid.UUID) -> str:
+    return f"/api/jobs/{job_id}/artifacts/"
+
+
+def _artifact_proxy_url(job_id: uuid.UUID, relative_path: str) -> str:
+    return f"{_artifact_proxy_base_url(job_id)}{relative_path.lstrip('/')}"
+
+
+def _relative_path_inside_workspace(*, workspace: Path, candidate: str | None) -> str | None:
+    if not candidate:
+        return None
+    path = Path(candidate).expanduser().resolve()
+    try:
+        return path.relative_to(workspace).as_posix()
+    except ValueError:
+        return None
+
+
+def _upload_local_bundle_to_draft_storage(
+    *,
+    result: AgentRunSuccess,
+    storage: ObjectStorageService,
+    user_id: uuid.UUID,
+    job_id: uuid.UUID,
+) -> AgentRunSuccess:
+    workspace = Path(result.artifact_prefix).expanduser().resolve()
+    if not result.artifact_prefix or not workspace.exists() or not workspace.is_dir():
+        return result
+
+    draft_prefix = f"drafts/{user_id}/{job_id}/{DRAFT_VERSION}"
+    for path in sorted(workspace.rglob("*")):
+        if not path.is_file():
+            continue
+        relative_path = path.relative_to(workspace).as_posix()
+        object_key = storage.build_draft_object_key(
+            user_id=user_id,
+            job_id=job_id,
+            version=DRAFT_VERSION,
+            relative_path=relative_path,
+        )
+        storage.put_object(
+            object_key,
+            body=path.read_bytes(),
+            content_type=mimetypes.guess_type(relative_path)[0]
+            or "application/octet-stream",
+        )
+
+    manifest_key = storage.build_draft_object_key(
+        user_id=user_id,
+        job_id=job_id,
+        version=DRAFT_VERSION,
+        relative_path="manifest.json",
+    )
+    cover_relative_path = _relative_path_inside_workspace(
+        workspace=workspace,
+        candidate=result.cover_url,
+    )
+    return AgentRunSuccess(
+        title=result.title,
+        description=result.description,
+        tags=list(result.tags),
+        cover_url=(
+            _artifact_proxy_url(job_id, cover_relative_path)
+            if cover_relative_path
+            else result.cover_url
+        ),
+        artifact_prefix=draft_prefix,
+        manifest_url=storage.build_presigned_read_url(manifest_key).url,
+        artifact_base_url=_artifact_proxy_base_url(job_id),
+        result_summary=result.result_summary,
+        logs=list(result.logs),
+    )
 
 
 async def _append_agent_logs(
@@ -202,6 +340,7 @@ async def _run_job_in_background(
     session_factory,
     job_id: uuid.UUID,
     runner_input: AgentRunInput,
+    storage: ObjectStorageService,
 ) -> None:
     runner = get_agent_runner()
     async with session_factory() as session:
@@ -253,6 +392,13 @@ async def _run_job_in_background(
         )
 
         if isinstance(result, AgentRunSuccess):
+            result = _upload_local_bundle_to_draft_storage(
+                result=result,
+                storage=storage,
+                user_id=refreshed_job.user_id,
+                job_id=refreshed_job.id,
+            )
+            uses_artifact_proxy = result.artifact_base_url == _artifact_proxy_base_url(job_id)
             game = Game(
                 owner_id=refreshed_job.user_id,
                 title=result.title,
@@ -260,7 +406,11 @@ async def _run_job_in_background(
                 cover_url=result.cover_url,
                 tags=result.tags,
                 status="draft",
-                manifest_url=result.manifest_url,
+                manifest_url=(
+                    _artifact_proxy_url(job_id, "manifest.json")
+                    if uses_artifact_proxy
+                    else result.manifest_url
+                ),
                 artifact_base_url=result.artifact_base_url,
             )
             session.add(game)
@@ -294,6 +444,7 @@ async def create_job(
     background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[ObjectStorageService, Depends(get_storage_service)],
 ) -> dict[str, Any]:
     create_session = await db.get(CreateSession, payload.session_id)
     if create_session is None or create_session.user_id != user.user_id:
@@ -343,6 +494,7 @@ async def create_job(
         session_factory=session_factory,
         job_id=job.id,
         runner_input=runner_input,
+        storage=storage,
     )
     return {
         "job_id": str(job.id),
@@ -359,6 +511,7 @@ async def create_revision_job(
     background_tasks: BackgroundTasks,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[ObjectStorageService, Depends(get_storage_service)],
 ) -> dict[str, Any]:
     source_job = await _get_owned_job(db, job_id=job_id, user_id=user.user_id)
     if source_job.status in {"pending", "running"}:
@@ -404,6 +557,7 @@ async def create_revision_job(
         session_factory=session_factory,
         job_id=revision_job.id,
         runner_input=runner_input,
+        storage=storage,
     )
     return {
         "job_id": str(revision_job.id),
@@ -424,6 +578,7 @@ async def list_jobs(
     jobs = (
         await db.execute(
             select(GenerationJob)
+            .options(selectinload(GenerationJob.game))
             .where(GenerationJob.user_id == user.user_id)
             .order_by(GenerationJob.created_at.desc())
         )
@@ -439,6 +594,59 @@ async def get_job(
 ) -> dict[str, Any]:
     job = await _get_owned_job(db, job_id=job_id, user_id=user.user_id)
     return _serialize_job(job)
+
+
+@router.delete("/{job_id}", status_code=204)
+async def delete_job(
+    job_id: uuid.UUID,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+) -> Response:
+    job = await _get_owned_job(db, job_id=job_id, user_id=user.user_id)
+    if job.status in {"pending", "running"}:
+        raise HTTPException(status_code=409, detail="Job is still generating")
+
+    child_jobs = (
+        await db.execute(
+            select(GenerationJob).where(GenerationJob.parent_job_id == job.id)
+        )
+    ).scalars().all()
+    for child_job in child_jobs:
+        child_job.parent_job_id = None
+
+    bound_assets = (
+        await db.execute(select(UploadedAsset).where(UploadedAsset.job_id == job.id))
+    ).scalars().all()
+    for asset in bound_assets:
+        asset.job_id = None
+
+    await db.delete(job)
+    await db.commit()
+    return Response(status_code=204)
+
+
+@router.get("/{job_id}/artifacts/{relative_path:path}")
+async def get_job_artifact(
+    job_id: uuid.UUID,
+    relative_path: str,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_session)],
+    storage: Annotated[ObjectStorageService, Depends(get_storage_service)],
+):
+    job = await _get_owned_job(db, job_id=job_id, user_id=user.user_id)
+    local_path = _artifact_file_path(job, relative_path)
+    if local_path:
+        return FileResponse(local_path)
+    try:
+        stored = storage.get_object(_artifact_object_key(job, relative_path))
+    except (KeyError, StorageUnavailableError) as exc:
+        raise HTTPException(status_code=404, detail="Artifact not found") from exc
+    if isinstance(stored, tuple):
+        body, content_type = stored
+    else:
+        body = stored.body
+        content_type = stored.content_type
+    return Response(content=body, media_type=content_type)
 
 
 @router.get("/{job_id}/logs")

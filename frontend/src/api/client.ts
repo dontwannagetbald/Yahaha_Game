@@ -3,6 +3,7 @@ export type ApiErrorBody = {
     code?: string;
     message?: string;
     retry_hint?: string | null;
+    details?: unknown;
   };
   detail?:
     | string
@@ -15,28 +16,52 @@ export type ApiErrorBody = {
         code?: string;
         message?: string;
         retry_hint?: string | null;
+        details?: unknown;
       };
 };
 
 export class ApiError extends Error {
   code: string;
+  details?: string;
   retryHint: string | null;
   status: number;
 
-  constructor(status: number, code: string, message: string, retryHint: string | null = null) {
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    retryHint: string | null = null,
+    details?: string,
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.retryHint = retryHint;
+    this.details = details;
   }
 }
 
 const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
 const apiBaseUrl = rawApiBaseUrl.replace(/\/$/, "");
 
+function stringifyErrorDetails(value: unknown): string | undefined {
+  if (value == null) {
+    return undefined;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 function normalizeErrorDetail(body: ApiErrorBody | null): {
   code?: string;
+  details?: string;
   message?: string;
   retryHint: string | null;
 } {
@@ -68,6 +93,7 @@ function normalizeErrorDetail(body: ApiErrorBody | null): {
 
   return {
     code: body.detail.code,
+    details: stringifyErrorDetails(body.detail.details),
     message: body.detail.message,
     retryHint: body.detail.retry_hint ?? null,
   };
@@ -93,7 +119,8 @@ export async function parseApiError(response: Response): Promise<ApiError> {
   const code = body?.error?.code ?? detail.code ?? `http_${response.status}`;
   const message = body?.error?.message ?? detail.message ?? response.statusText ?? "Request failed";
   const retryHint = body?.error?.retry_hint ?? detail.retryHint;
-  return new ApiError(response.status, code, message, retryHint);
+  const details = stringifyErrorDetails(body?.error?.details) ?? detail.details;
+  return new ApiError(response.status, code, message, retryHint, details);
 }
 
 export async function requestJson<T>(

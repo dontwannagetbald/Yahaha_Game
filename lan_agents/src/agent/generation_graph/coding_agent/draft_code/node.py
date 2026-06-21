@@ -10,6 +10,7 @@ from typing import Any
 
 from agent.generation_graph.state import GenerationState
 from agent.generation_graph.tools.path_safety import ensure_workspace_root
+from agent.generation_graph.tools.runtime_protocol import ensure_game_ready_signal
 from agent.generation_graph.tools.workspace import write_workspace_text
 from agent.providers import LLMMessage, LLMProvider, ProviderError, provider_from_env
 
@@ -41,6 +42,7 @@ Rules:
 - if an effect can be drawn procedurally, implement it in game.js instead of inventing new asset files
 - do not include secrets, tokens, passwords, signed URLs, or absolute local paths
 - keep the game runnable in a sandboxed iframe with allow-scripts only
+- game_js must call window.parent.postMessage({ type: 'game_ready' }, '*') after initialization so Play can mark the iframe ready
 - keep the output compact: no comments, no unnecessary whitespace, and concise gameplay logic
 - every field value must remain valid JSON strings
 - prefer single quotes inside HTML, CSS, and JS so the outer JSON stays valid more reliably
@@ -69,6 +71,7 @@ def draft_code(
     html = _require_text(llm_result.get("index_html"), "index_html")
     css = _require_text(llm_result.get("style_css"), "style_css")
     js = _require_text(llm_result.get("game_js"), "game_js")
+    js = ensure_game_ready_signal(js)
     notes = _normalize_notes(llm_result.get("coding_notes"))
 
     _reject_unsafe_content(html, "index_html")

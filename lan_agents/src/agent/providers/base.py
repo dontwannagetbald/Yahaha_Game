@@ -11,6 +11,10 @@ from typing import Any, Protocol
 class ProviderError(RuntimeError):
     """Base class for provider failures safe to summarize upstream."""
 
+    def __init__(self, message: str, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.details = details
+
 
 class ProviderConfigurationError(ProviderError):
     """Raised when provider configuration is incomplete."""

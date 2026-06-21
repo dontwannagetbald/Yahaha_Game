@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List
 
 import pytest
@@ -22,6 +23,7 @@ from app.agent_runner import (
     set_agent_runner,
 )
 from app.db import get_session as app_get_session
+from app import jobs as jobs_module
 from app.main import app
 from app.models import AgentLog, Base, CreateSession, Game, GenerationJob, UploadedAsset, User
 
@@ -349,6 +351,56 @@ def success_result() -> AgentRunSuccess:
     )
 
 
+class StubPresignedReadResult:
+    def __init__(self, url: str, expires_in: int = 900) -> None:
+        self.url = url
+        self.expires_in = expires_in
+
+
+class RecordingStorageService:
+    def __init__(self) -> None:
+        self.objects: dict[str, tuple[bytes, str]] = {}
+
+    def build_draft_object_key(self, *, user_id, job_id, version: str, relative_path: str) -> str:
+        return f"drafts/{user_id}/{job_id}/{version}/{relative_path}"
+
+    def build_presigned_read_url(self, object_key: str, *, expires_in: int = 900):
+        return StubPresignedReadResult(
+            f"http://localhost:9000/yahaha-game/{object_key}?X-Amz-Signature=test",
+            expires_in,
+        )
+
+    def put_object(self, object_key: str, *, body: bytes, content_type: str) -> None:
+        self.objects[object_key] = (body, content_type)
+
+    def get_object(self, object_key: str):
+        body, content_type = self.objects[object_key]
+        return body, content_type
+
+
+def local_bundle_result(workspace: Path) -> AgentRunSuccess:
+    (workspace / "assets").mkdir(parents=True)
+    (workspace / "manifest.json").write_text(
+        '{"entry":"index.html","styles":["style.css"],"scripts":["game.js"],"assets":["assets/cover.png"],"cover":"assets/cover.png","runtime":"html5-iframe"}',
+        encoding="utf-8",
+    )
+    (workspace / "index.html").write_text("<!doctype html><html></html>", encoding="utf-8")
+    (workspace / "style.css").write_text("body { margin: 0; }", encoding="utf-8")
+    (workspace / "game.js").write_text("window.parent.postMessage({type:'game_ready'}, '*');", encoding="utf-8")
+    (workspace / "assets" / "cover.png").write_bytes(b"fake-png")
+    return AgentRunSuccess(
+        title="Local Bundle",
+        description="A generated local bundle",
+        tags=["local"],
+        cover_url=str(workspace / "assets" / "cover.png"),
+        artifact_prefix=str(workspace),
+        manifest_url=str(workspace / "manifest.json"),
+        artifact_base_url=f"{workspace}/",
+        result_summary="Generation completed",
+        logs=[AgentLogEvent(step="finish", level="info", message="Bundle generated")],
+    )
+
+
 def failure_result() -> AgentRunFailure:
     return AgentRunFailure(
         error_message="Mock provider failed",
@@ -663,3 +715,49 @@ def test_success_creates_draft_game_and_links_job(client: TestClient, session_fa
             assert game.artifact_base_url == "https://draft.local/drafts/user-id/job-id/v1/"
 
     asyncio.run(inspect())
+
+
+def test_success_uploads_local_bundle_to_draft_storage(
+    client: TestClient, session_factory, tmp_path: Path
+):
+    storage = RecordingStorageService()
+    app.dependency_overrides[jobs_module.get_storage_service] = lambda: storage
+    runner = CapturingRunner(result=local_bundle_result(tmp_path / "bundle"))
+    set_agent_runner(runner)
+    register_and_login(client)
+    session_id = create_confirmed_session(
+        client,
+        session_factory,
+        initial_message="build stored draft game",
+    )
+
+    response = client.post(
+        "/api/jobs",
+        json={"session_id": session_id},
+    )
+
+    job_id = response.json()["job_id"]
+
+    async def inspect():
+        async with session_factory() as session:
+            job = await session.get(GenerationJob, uuid.UUID(job_id))
+            assert job.status == "succeeded"
+            assert job.artifact_prefix == f"drafts/{job.user_id}/{job.id}/v1"
+            assert job.manifest_url.startswith("http://localhost:9000/yahaha-game/drafts/")
+            assert "/app/output/" not in job.manifest_url
+
+            game = await session.get(Game, job.game_id)
+            assert game is not None
+            assert game.manifest_url == f"/api/jobs/{job.id}/artifacts/manifest.json"
+            assert game.artifact_base_url == f"/api/jobs/{job.id}/artifacts/"
+            assert game.cover_url == f"/api/jobs/{job.id}/artifacts/assets/cover.png"
+
+    asyncio.run(inspect())
+
+    assert f"drafts/{runner.calls[0]['user_id']}/{job_id}/v1/manifest.json" in storage.objects
+    assert f"drafts/{runner.calls[0]['user_id']}/{job_id}/v1/index.html" in storage.objects
+
+    artifact = client.get(f"/api/jobs/{job_id}/artifacts/index.html")
+
+    assert artifact.status_code == 200
+    assert "<!doctype html>" in artifact.text

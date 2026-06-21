@@ -12,7 +12,11 @@ const failures = [];
 const requiredCreatePageTokens = [
   "onRegenerateCard: () => Promise<boolean>;",
   "onConfirmCard: () => Promise<boolean>;",
-  "createSessionPendingEventType: \"chat\" | \"upload_assets\" | \"regenerate\" | \"confirm\" | null;",
+  "createSessionPendingEventType:",
+  "| \"chat\"",
+  "| \"upload_assets\"",
+  "| \"regenerate\"",
+  "| \"confirm\"",
   "const isCardLoading =",
   "const card = assistant_response?.card ?? null;",
   "createSessionPendingEventType === \"chat\"",
@@ -21,6 +25,9 @@ const requiredCreatePageTokens = [
   "className={`confirm-card ${isCardLoading ? \"loading\" : \"\"}`}",
   "className=\"confirm-card-status\"",
   "生成中...",
+  "const shouldShowCardActions =",
+  "createSession?.conversation_status === \"ready_to_confirm\"",
+  "shouldShowCardActions ? (",
   "<div className=\"confirm-card-actions\">",
   "确认",
   "重新生成",
@@ -100,8 +107,16 @@ if (createPage.includes("标签：{card.tags.join(\" / \") || \"暂无标签\"}"
   failures.push("Expected confirm card to hide tags from the rendered card body.");
 }
 
-if (createPage.includes("createSession?.conversation_status === \"ready_to_confirm\"")) {
-  failures.push("Expected confirm card to remain visible after confirm instead of gating on ready_to_confirm only.");
+if (/card\s*&&\s*createSession\?\.conversation_status === "ready_to_confirm"/.test(createPage)) {
+  failures.push("Expected confirm card to remain visible after confirm instead of gating the whole card on ready_to_confirm.");
+}
+
+if (
+  !/shouldShowCardActions\s*\?\s*\([\s\S]*className="confirm-card-actions"[\s\S]*onClick=\{\(\) => void onConfirmCard\(\)\}[\s\S]*onClick=\{\(\) => void onRegenerateCard\(\)\}[\s\S]*\)\s*:\s*null/.test(
+    createPage,
+  )
+) {
+  failures.push("Expected confirm/regenerate buttons to render only while the card is still confirmable.");
 }
 
 if (failures.length > 0) {

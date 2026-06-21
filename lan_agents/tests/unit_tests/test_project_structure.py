@@ -10,6 +10,7 @@ def test_agent_graphs_are_split_into_subgraph_directories() -> None:
     assert (src / "generation_graph" / "graph.py").is_file()
     assert (src / "revision_graph" / "graph.py").is_file()
     assert (src / "revision_graph" / "routes" / "route_revision_intent" / "node.py").is_file()
+    assert (src / "revision_graph" / "services" / "revision_planner.py").is_file()
 
 
 def test_conversation_nodes_are_split_one_node_per_directory() -> None:

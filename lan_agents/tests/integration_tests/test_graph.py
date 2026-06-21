@@ -10,8 +10,9 @@ async def test_conversation_graph_loads() -> None:
     res = await conversation_graph.ainvoke(inputs)
     assert res is not None
     assert res["conversation_status"] == "collecting"
-    assert "躲避障碍" in res["user_requirements"]["must_have"]
-    assert "arcade" in res["game_plan"]["tags"]
+    assert "躲避障碍" in res["user_requirements"]["intent_summary"]
+    assert res["user_requirements"]["must_have"] == []
+    assert res["game_plan"]["tags"] == []
     assert res["material_usage"] == {"assets": []}
     assert isinstance(res["assistant_response"]["suggestions"], list)
     assert res["assistant_response"]["card"] is None
@@ -72,6 +73,9 @@ async def test_conversation_graph_routes_supported_events(
 
 async def test_chat_returns_card_only_when_game_plan_is_complete() -> None:
     inputs = {
+        "game_plan": {
+            "tags": ["arcade", "casual"],
+        },
         "user_event": {
             "type": "chat",
             "message": "标题叫星星小猫，介绍是帮助小猫收集星星，玩法是躲避障碍并收集星星，风格是可爱卡通，角色是小猫，胜利条件是收集10颗星星，失败条件是撞到滚石，操作方式是方向键移动。",

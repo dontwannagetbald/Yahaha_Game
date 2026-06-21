@@ -1,4 +1,5 @@
 import pytest
+from urllib.error import HTTPError
 
 from agent.providers.openai_compatible import (
     parse_chat_completion_response,
@@ -133,6 +134,9 @@ def test_openai_provider_uses_responses_api_for_reference_attachments(
         def read(self, *_args):
             return self._body.encode("utf-8")
 
+        def close(self):
+            return None
+
     def fake_urlopen(http_request, timeout):
         calls.append(
             {
@@ -204,6 +208,9 @@ def test_openai_provider_accepts_wrapped_file_upload_response(
         def read(self, *_args):
             return self._body.encode("utf-8")
 
+        def close(self):
+            return None
+
     def fake_urlopen(http_request, timeout):
         calls.append({"url": http_request.full_url, "method": http_request.get_method()})
         if http_request.full_url.endswith("/files") and http_request.get_method() == "POST":
@@ -263,6 +270,9 @@ def test_openai_provider_file_upload_without_id_reports_response_preview(
         def read(self, *_args):
             return self._body.encode("utf-8")
 
+        def close(self):
+            return None
+
     def fake_urlopen(http_request, timeout):
         if http_request.full_url.endswith("/files") and http_request.get_method() == "POST":
             return FakeResponse('{"code":0,"msg":"success","data":{}}')
@@ -292,6 +302,68 @@ def test_openai_provider_file_upload_without_id_reports_response_preview(
                 }
             ],
         )
+
+
+def test_openai_provider_retries_chat_completion_with_max_completion_tokens(
+    monkeypatch,
+) -> None:
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, body: str) -> None:
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self, *_args):
+            return self._body.encode("utf-8")
+
+        def close(self):
+            return None
+
+    def fake_urlopen(http_request, timeout):
+        payload = http_request.data.decode("utf-8")
+        calls.append(payload)
+        if len(calls) == 1:
+            raise HTTPError(
+                http_request.full_url,
+                400,
+                "Bad Request",
+                hdrs=None,
+                fp=FakeResponse(
+                    '{"error":{"message":"Unsupported parameter: max_tokens is not supported with this model. Use max_completion_tokens instead."}}'
+                ),
+            )
+        return FakeResponse(
+            '{"choices":[{"message":{"content":"{\\"ok\\":true,\\"retry\\":\\"max_completion_tokens\\"}"}}]}'
+        )
+
+    monkeypatch.setattr("agent.providers.openai_compatible.request.urlopen", fake_urlopen)
+    provider = OpenAICompatibleLLMProvider(
+        ProviderConfig(
+            provider="openai-compatible",
+            api_key="test-key",
+            base_url="https://api.openai.test/v1",
+            model="gpt-test",
+        )
+    )
+
+    result = provider.complete_json(
+        messages=[LLMMessage(role="user", content="Build contracts")],
+        response_schema={"type": "object"},
+        max_tokens=777,
+    )
+
+    assert result == {"ok": True, "retry": "max_completion_tokens"}
+    first_payload = calls[0]
+    second_payload = calls[1]
+    assert '"max_tokens": 777' in first_payload
+    assert '"max_completion_tokens": 777' in second_payload
+    assert '"max_tokens"' not in second_payload
 
 
 def test_parse_responses_api_response_reads_output_text() -> None:

@@ -26,6 +26,16 @@ async def _run_graph_or_raise_http(state: dict[str, Any]) -> dict[str, Any]:
         return await run_conversation_graph(state)
     except Exception as exc:
         message = str(exc).strip() or "Agent 对话生成失败，请稍后重试。"
+        if getattr(exc, "details", None):
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "code": "provider_error",
+                    "message": message,
+                    "retry_hint": "请稍后重试。",
+                    "details": exc.details,
+                },
+            ) from exc
         raise HTTPException(status_code=502, detail=message) from exc
 
 

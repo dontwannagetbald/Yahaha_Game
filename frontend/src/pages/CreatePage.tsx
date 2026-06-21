@@ -5,6 +5,7 @@ import type { CreateSessionMessage, CreateSessionState } from "../api/create-ses
 import { MAX_CREATE_UPLOAD_SIZE_BYTES } from "../api/uploads";
 import { logConsoleEvent } from "../lib/console";
 import type { UserFacingError } from "../lib/errors";
+import { fallbackCoverUrl } from "../lib/games";
 import "./create.css";
 
 export type CreateTaskItem = {
@@ -15,9 +16,12 @@ export type CreateTaskItem = {
   status: "pending" | "running" | "succeeded" | "failed";
   created_at: string;
   game_id: string | null;
+  cover_url?: string | null;
   result_summary: string | null;
   error_message: string | null;
   validation_report: Record<string, unknown> | null;
+  manifest_url?: string | null;
+  artifact_base_url?: string | null;
 };
 
 export type CreateUploadedFileItem = {
@@ -79,6 +83,7 @@ type CreatePageProps = {
   tasks: CreateTaskItem[];
   tasksLoading: boolean;
   tasksError: UserFacingError | null;
+  deletingTaskId: string | null;
   selectedTaskId: string | null;
   selectedCreateSessionId: string | null;
   currentJobStatus: CreateTaskItem["status"] | null;
@@ -94,17 +99,17 @@ type CreatePageProps = {
     | "upload_assets"
     | "regenerate"
     | "confirm"
-    | "redo"
     | null;
   currentUser: AuthUser | null;
   publishingGameId: string | null;
+  revisionPromptMessage: string;
   onRetryTasks: () => void;
   onCreateNewSession: () => void;
   onSelectTask: (task: CreateTaskItem) => void;
+  onDeleteTask: (task: CreateTaskItem) => Promise<boolean>;
   onPublishGame: (task: CreateTaskItem) => Promise<boolean>;
   onConfirmCard: () => Promise<boolean>;
   onRegenerateCard: () => Promise<boolean>;
-  onRedoGeneratedGame: () => Promise<boolean>;
   onSendMessage: (message: string) => Promise<boolean>;
   onUploadFiles: (files: File[]) => Promise<boolean>;
   onRemoveBoundFile: (assetId: string) => Promise<boolean>;
@@ -308,10 +313,51 @@ function getStepStatusFromLogs(
   return "pending";
 }
 
+function toAbsoluteUrl(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) {
+    return null;
+  }
+
+  try {
+    return new URL(rawUrl, window.location.origin).toString();
+  } catch {
+    return null;
+  }
+}
+
+function getPreviewCoverUrl(selectedTask: CreateTaskItem | null): string {
+  return toAbsoluteUrl(selectedTask?.cover_url) ?? fallbackCoverUrl;
+}
+
+function getPreviewUrls(
+  selectedTask: CreateTaskItem | null,
+): { iframeSrc: string; bundleUrl: string } | null {
+  const artifactBaseUrl = toAbsoluteUrl(selectedTask?.artifact_base_url);
+  if (artifactBaseUrl) {
+    const bundleUrl = new URL("index.html", artifactBaseUrl).toString();
+    return {
+      iframeSrc: bundleUrl,
+      bundleUrl,
+    };
+  }
+
+  const manifestUrl = toAbsoluteUrl(selectedTask?.manifest_url);
+  if (manifestUrl) {
+    const bundleUrl = new URL("index.html", manifestUrl).toString();
+    return {
+      iframeSrc: bundleUrl,
+      bundleUrl,
+    };
+  }
+
+  return null;
+}
+
 export function CreatePage({
   tasks,
   tasksLoading,
   tasksError,
+  deletingTaskId,
   selectedTaskId,
   selectedCreateSessionId,
   currentJobStatus,
@@ -325,13 +371,14 @@ export function CreatePage({
   createSessionPendingEventType,
   currentUser,
   publishingGameId,
+  revisionPromptMessage,
   onRetryTasks,
   onCreateNewSession,
   onSelectTask,
+  onDeleteTask,
   onPublishGame,
   onConfirmCard,
   onRegenerateCard,
-  onRedoGeneratedGame,
   onSendMessage,
   onUploadFiles,
   onRemoveBoundFile,
@@ -339,6 +386,7 @@ export function CreatePage({
   const [tasksExpanded, setTasksExpanded] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<CreateUploadedFileItem[]>([]);
   const [composerText, setComposerText] = useState("");
+  const [startedPreviewTaskIds, setStartedPreviewTaskIds] = useState<Record<string, true>>({});
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messageStreamRef = useRef<HTMLDivElement | null>(null);
 
@@ -359,17 +407,27 @@ export function CreatePage({
     taskHistoryContent = <p className="task-list-state">暂无历史任务</p>;
   } else {
     taskHistoryContent = tasks.map((task) => (
-      <button
-        className={`task-item ${selectedTaskId === task.job_id ? "selected" : ""}`}
-        key={task.job_id}
-        onClick={() => onSelectTask(task)}
-        type="button"
-      >
-        <div className="task-head">
-          <strong>{task.title}</strong>
-          <span className={`badge ${task.status}`}>{task.status}</span>
-        </div>
-      </button>
+      <div className={`task-item ${selectedTaskId === task.job_id ? "selected" : ""}`} key={task.job_id}>
+        <button className="task-select-button" onClick={() => onSelectTask(task)} type="button">
+          <div className="task-head">
+            <strong>{task.title}</strong>
+            <span className={`badge ${task.status}`}>{task.status}</span>
+          </div>
+        </button>
+        <button
+          aria-label={`删除任务 ${task.title}`}
+          className="task-delete-button"
+          disabled={
+            Boolean(deletingTaskId) ||
+            task.status === "pending" ||
+            task.status === "running"
+          }
+          onClick={() => void onDeleteTask(task)}
+          type="button"
+        >
+          ×
+        </button>
+      </div>
     ));
   }
 
@@ -528,6 +586,10 @@ export function CreatePage({
       ? assistant_response.suggestions
       : [];
   const card = assistant_response?.card ?? null;
+  const shouldShowCardActions =
+    createSession?.conversation_status === "ready_to_confirm" && !isConversationLocked;
+  const shouldShowRevisionPrompt =
+    currentJobStatus === "succeeded" && createSession?.conversation_status === "confirmed";
   const isCardLoading =
     Boolean(card) &&
     (createSessionPendingEventType === "chat" ||
@@ -545,6 +607,9 @@ export function CreatePage({
   const jobProgress = getJobProgressView(currentJobStatus, agentLogs);
   const shouldShowGenerateEmptyState = !selectedTaskId && currentJobStatus === null;
   const selectedTask = tasks.find((task) => task.job_id === selectedTaskId) ?? null;
+  const previewUrls = getPreviewUrls(selectedTask);
+  const previewCoverUrl = getPreviewCoverUrl(selectedTask);
+  const hasStartedPreview = selectedTask ? Boolean(startedPreviewTaskIds[selectedTask.job_id]) : false;
   const selectedTaskGameId = selectedTask?.game_id ?? null;
   const isPublishingSelectedGame =
     selectedTaskGameId !== null ? publishingGameId === selectedTaskGameId : false;
@@ -560,7 +625,7 @@ export function CreatePage({
     });
 
     return () => cancelAnimationFrame(frameId);
-  }, [createSessionSending, selectedCreateSessionId, visibleMessages.length]);
+  }, [createSessionSending, selectedCreateSessionId, visibleMessages.length, currentJobStatus]);
 
   return (
     <main className="create-page create-layout" data-testid="create-workspace">
@@ -658,24 +723,35 @@ export function CreatePage({
                     {isCardLoading ? <div className="confirm-card-status">生成中...</div> : null}
                     <h2>{card.title}</h2>
                     <p>{card.introduction}</p>
-                    <div className="confirm-card-actions">
-                      <button
-                        className="primary-pill"
-                        disabled={isConversationLocked || createSessionSending}
-                        onClick={() => void onConfirmCard()}
-                        type="button"
-                      >
-                        确认
-                      </button>
-                      <button
-                        className="secondary-pill"
-                        disabled={isConversationLocked || createSessionSending}
-                        onClick={() => void onRegenerateCard()}
-                        type="button"
-                      >
-                        重新生成
-                      </button>
-                    </div>
+                    {shouldShowCardActions ? (
+                      <div className="confirm-card-actions">
+                        <button
+                          className="primary-pill"
+                          disabled={isConversationLocked || createSessionSending}
+                          onClick={() => void onConfirmCard()}
+                          type="button"
+                        >
+                          确认
+                        </button>
+                        <button
+                          className="secondary-pill"
+                          disabled={isConversationLocked || createSessionSending}
+                          onClick={() => void onRegenerateCard()}
+                          type="button"
+                        >
+                          重新生成
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </article>
+              ) : null}
+
+              {shouldShowRevisionPrompt ? (
+                <article className="message-row agent">
+                  <span className="message-avatar">AI</span>
+                  <div className="message-bubble">
+                    <div className="message-content">{revisionPromptMessage}</div>
                   </div>
                 </article>
               ) : null}
@@ -783,7 +859,58 @@ export function CreatePage({
                 {/* <h1>生成游戏显示面板</h1> */}
                 {/* <p>这里展示当前任务状态、预览结果和 Agent 执行进度。</p> */}
               </div>
-              <div className="preview-frame preview-sandbox" aria-label="游戏沙盒区域" />
+              <div className="preview-frame preview-sandbox" aria-label="游戏沙盒区域">
+                {!hasStartedPreview ? (
+                  <div
+                    className="preview-cover-stage"
+                    style={{ backgroundImage: `url("${previewCoverUrl}")` }}
+                  >
+                    <div className="preview-cover-scrim" />
+                    <div className="preview-cover-panel">
+                      <p className="preview-cover-kicker">Draft Preview</p>
+                      <strong>{selectedTask?.title ?? "游戏预览"}</strong>
+                      <span>先看封面，点击后再正式进入游戏。</span>
+                      <button
+                        className="primary-pill preview-start-button"
+                        disabled={!selectedTask?.job_id || !previewUrls?.iframeSrc}
+                        onClick={() => {
+                          if (!selectedTask?.job_id) {
+                            return;
+                          }
+                          setStartedPreviewTaskIds((current) => ({
+                            ...current,
+                            [selectedTask.job_id]: true,
+                          }));
+                        }}
+                        type="button"
+                      >
+                        开始游玩
+                      </button>
+                    </div>
+                  </div>
+                ) : previewUrls?.iframeSrc ? (
+                  <div className="preview-runtime-shell">
+                    <iframe
+                      className="preview-sandbox-iframe"
+                      sandbox="allow-scripts allow-same-origin"
+                      src={previewUrls.iframeSrc}
+                      title={selectedTask?.title ?? "游戏预览"}
+                    />
+                  </div>
+                ) : (
+                  <span>预览地址暂不可用</span>
+                )}
+              </div>
+              {previewUrls?.bundleUrl ? (
+                <a
+                  className="preview-bundle-link"
+                  href={previewUrls.bundleUrl}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Bundle URL
+                </a>
+              ) : null}
               <div className="action-row">
                 <button
                   className="primary-pill"
@@ -794,14 +921,6 @@ export function CreatePage({
                   type="button"
                 >
                   {isPublishingSelectedGame ? "发布中" : "发布"}
-                </button>
-                <button
-                  className="secondary-pill"
-                  disabled={createSessionSending}
-                  onClick={() => void onRedoGeneratedGame()}
-                  type="button"
-                >
-                  {createSessionPendingEventType === "redo" && createSessionSending ? "重做中" : "重做"}
                 </button>
               </div>
             </>

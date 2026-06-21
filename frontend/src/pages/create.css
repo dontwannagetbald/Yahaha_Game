@@ -83,15 +83,50 @@
 }
 
 .create-page .task-item {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  padding: 12px 14px;
+  padding: 8px 10px 8px 14px;
   color: inherit;
-  text-align: left;
 }
 
 .create-page .task-item.selected {
   outline: 2px solid rgba(255, 194, 0, 0.5);
+}
+
+.create-page .task-select-button {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.create-page .task-delete-button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.create-page .task-delete-button:hover:not(:disabled) {
+  background: rgba(255, 102, 102, 0.2);
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.create-page .task-delete-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 
 .create-page .task-head {
@@ -512,7 +547,7 @@
 }
 
 .create-page .generate-panel.succeeded {
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
 }
 
 .create-page .generate-panel-empty-state {
@@ -544,10 +579,130 @@
 }
 
 .create-page .preview-frame.preview-sandbox {
+  position: relative;
   min-height: 0;
+  overflow: hidden;
+  align-items: stretch;
+  justify-items: stretch;
+  padding: 14px;
   border-style: solid;
   border-color: rgba(255, 255, 255, 0.08);
   background: rgba(12, 14, 15, 0.52);
+}
+
+.create-page .preview-frame.preview-sandbox > iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.create-page .preview-runtime-shell,
+.create-page .preview-cover-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 22px;
+}
+
+.create-page .preview-runtime-shell {
+  display: grid;
+  padding: 10px 12px 10px 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    rgba(7, 9, 10, 0.42);
+}
+
+.create-page .preview-sandbox-iframe {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  display: block;
+  border-radius: 18px;
+  background: rgba(10, 12, 13, 0.96);
+}
+
+.create-page .preview-cover-stage {
+  display: grid;
+  place-items: center;
+  background-color: #111518;
+  background-position: center;
+  background-size: cover;
+}
+
+.create-page .preview-cover-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(9, 11, 12, 0.18) 0%, rgba(9, 11, 12, 0.74) 100%),
+    rgba(7, 9, 10, 0.28);
+  backdrop-filter: blur(4px);
+}
+
+.create-page .preview-cover-panel {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 10px;
+  width: min(420px, calc(100% - 48px));
+  padding: 24px 26px 26px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 26px;
+  background: rgba(13, 16, 18, 0.68);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.24);
+  text-align: center;
+}
+
+.create-page .preview-cover-kicker {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.64);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.create-page .preview-cover-panel strong {
+  font-size: clamp(24px, 3vw, 34px);
+  line-height: 1.08;
+}
+
+.create-page .preview-cover-panel span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.create-page .preview-start-button {
+  justify-self: center;
+  min-width: 144px;
+}
+
+.create-page .preview-frame.preview-sandbox canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.create-page .preview-frame.preview-sandbox img,
+.create-page .preview-frame.preview-sandbox video {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+.create-page .preview-bundle-link {
+  justify-self: start;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 13px;
+  line-height: 1.4;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  word-break: break-all;
 }
 
 .create-page .progress-row {
