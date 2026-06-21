@@ -11,6 +11,7 @@ const files = {
   home: "src/pages/HomePage.tsx",
   create: "src/pages/CreatePage.tsx",
   play: "src/pages/PlayPage.tsx",
+  styles: "src/styles.css",
 };
 
 const contents = Object.fromEntries(
@@ -49,6 +50,12 @@ const expectations = [
   [contents.errors, "UserFacingError"],
   [contents.errors, "retryHint"],
   [contents.errors, "nextStep"],
+  [contents.styles, ".app-shell"],
+  [contents.styles, "padding-top: 56px"],
+  [contents.styles, ".top-nav"],
+  [contents.styles, "position: fixed"],
+  [contents.styles, "inset: 0 0 auto"],
+  [contents.styles, "min-height: 56px"],
 ];
 
 const forbidden = [
@@ -59,6 +66,10 @@ const forbidden = [
 ];
 
 const failures = [];
+
+if (/\.top-nav\s*\{[^}]*position:\s*sticky;/s.test(contents.styles)) {
+  failures.push("Expected top-nav to avoid sticky positioning to prevent tab-restore layout shifts.");
+}
 
 for (const [source, token] of expectations) {
   if (!source.includes(token)) {

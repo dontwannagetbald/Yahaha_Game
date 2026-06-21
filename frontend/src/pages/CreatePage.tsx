@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent } from "react";
 
 import type { AuthUser } from "../api/auth";
-import type { CreateSessionMessage, CreateSessionState } from "../api/create-sessions";
+import type {
+  CreateSessionCard,
+  CreateSessionMessage,
+  CreateSessionState,
+} from "../api/create-sessions";
 import { MAX_CREATE_UPLOAD_SIZE_BYTES } from "../api/uploads";
 import { logConsoleEvent } from "../lib/console";
 import type { UserFacingError } from "../lib/errors";
@@ -29,17 +33,8 @@ export type CreateUploadedFileItem = {
   name: string;
   size: number;
   mimeType: string;
-  status: "uploading" | "failed";
+  status: "pending" | "uploading" | "failed";
   file?: File;
-  error?: string;
-};
-
-type CreateBoundFileItem = {
-  id: string;
-  name: string;
-  size: number;
-  mimeType: string;
-  status: "bound";
   error?: string;
 };
 
@@ -77,6 +72,7 @@ export type CreateAgentLogItem = {
 
 type RenderableConversationMessage = CreateSessionMessage & {
   attachments: MessageAttachmentItem[];
+  card: CreateSessionCard | null;
 };
 
 type CreatePageProps = {
@@ -112,7 +108,6 @@ type CreatePageProps = {
   onRegenerateCard: () => Promise<boolean>;
   onSendMessage: (message: string) => Promise<boolean>;
   onUploadFiles: (files: File[]) => Promise<boolean>;
-  onRemoveBoundFile: (assetId: string) => Promise<boolean>;
 };
 
 function getUserAvatarInitial(user: AuthUser | null): string {
@@ -123,12 +118,36 @@ function getUserAvatarInitial(user: AuthUser | null): string {
 }
 
 function hasCardPayload(message: CreateSessionMessage): boolean {
+  return getMessageCard(message) !== null;
+}
+
+function getMessageCard(message: CreateSessionMessage): CreateSessionCard | null {
   if (!message.payload || typeof message.payload !== "object") {
-    return false;
+    return null;
   }
 
   const card = (message.payload as Record<string, unknown>).card;
-  return Boolean(card && typeof card === "object");
+  if (!card || typeof card !== "object") {
+    return null;
+  }
+
+  const cardRecord = card as Record<string, unknown>;
+  if (
+    typeof cardRecord.plan_id !== "string" ||
+    typeof cardRecord.title !== "string" ||
+    typeof cardRecord.introduction !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    plan_id: cardRecord.plan_id,
+    title: cardRecord.title,
+    introduction: cardRecord.introduction,
+    tags: Array.isArray(cardRecord.tags)
+      ? cardRecord.tags.filter((tag): tag is string => typeof tag === "string")
+      : [],
+  };
 }
 
 function getMessageAttachments(message: CreateSessionMessage): MessageAttachmentItem[] {
@@ -187,10 +206,6 @@ function buildRenderableMessages(messages: CreateSessionMessage[]): RenderableCo
       continue;
     }
 
-    if (message.role === "assistant" && hasCardPayload(message)) {
-      continue;
-    }
-
     if (message.role === "system") {
       continue;
     }
@@ -198,6 +213,7 @@ function buildRenderableMessages(messages: CreateSessionMessage[]): RenderableCo
     renderableMessages.push({
       ...message,
       attachments: message.role === "user" ? pendingAttachments : [],
+      card: getMessageCard(message),
     });
 
     if (message.role === "user") {
@@ -214,6 +230,7 @@ function buildRenderableMessages(messages: CreateSessionMessage[]): RenderableCo
       content: "",
       payload: null,
       attachments: pendingAttachments,
+      card: null,
       created_at: pendingAttachmentCreatedAt ?? new Date(0).toISOString(),
     });
   }
@@ -381,7 +398,6 @@ export function CreatePage({
   onRegenerateCard,
   onSendMessage,
   onUploadFiles,
-  onRemoveBoundFile,
 }: CreatePageProps) {
   const [tasksExpanded, setTasksExpanded] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<CreateUploadedFileItem[]>([]);
@@ -392,7 +408,7 @@ export function CreatePage({
 
   let taskHistoryContent: React.ReactNode = null;
 
-  if (tasksLoading) {
+  if (tasksLoading && tasks.length === 0) {
     taskHistoryContent = <p className="task-list-state">任务历史加载中</p>;
   } else if (tasksError) {
     taskHistoryContent = (
@@ -446,8 +462,6 @@ export function CreatePage({
 
   function handleFileSelect(event: ChangeEvent<HTMLInputElement>) {
     const nextFiles = Array.from(event.target.files ?? []);
-    const acceptedFiles: File[] = [];
-    const acceptedItems: CreateUploadedFileItem[] = [];
     const nextItems: CreateUploadedFileItem[] = [];
 
     for (const file of nextFiles) {
@@ -464,34 +478,25 @@ export function CreatePage({
         continue;
       }
 
-      acceptedFiles.push(file);
-      const acceptedItem: CreateUploadedFileItem = {
+      nextItems.push({
         id,
         name: file.name,
         size: file.size,
         mimeType: file.type || "application/octet-stream",
-        status: "uploading",
+        status: "pending",
         file,
-      };
-      acceptedItems.push(acceptedItem);
-      nextItems.push(acceptedItem);
+      });
     }
 
     setSelectedFiles((current) => [...current, ...nextItems]);
     event.target.value = "";
-
-    if (acceptedFiles.length === 0) {
-      return;
-    }
-
-    void uploadSelectedFiles(acceptedItems, acceptedFiles);
   }
 
   function handleRemoveFile(fileId: string) {
     setSelectedFiles((current) => current.filter((item) => item.id !== fileId));
   }
 
-  async function uploadSelectedFiles(items: CreateUploadedFileItem[], files: File[]) {
+  async function uploadSelectedFiles(items: CreateUploadedFileItem[], files: File[]): Promise<boolean> {
     const itemIds = new Set(items.map((item) => item.id));
     const uploaded = await onUploadFiles(files);
     setSelectedFiles((current) =>
@@ -511,6 +516,7 @@ export function CreatePage({
         ];
       }),
     );
+    return uploaded;
   }
 
   function handleRetryFile(file: CreateUploadedFileItem) {
@@ -522,13 +528,12 @@ export function CreatePage({
         item.id === file.id
           ? {
               ...item,
-              status: "uploading",
+              status: "pending",
               error: undefined,
             }
           : item,
       ),
     );
-    void uploadSelectedFiles([file], [file.file]);
   }
 
   function handleSuggestionSelect(suggestion: string) {
@@ -537,11 +542,46 @@ export function CreatePage({
 
   async function handleSubmitMessage() {
     const normalizedMessage = composerText.trim();
+    const filesToUpload = selectedFiles.filter(
+      (file): file is CreateUploadedFileItem & { file: File } =>
+        file.status !== "failed" && Boolean(file.file),
+    );
     if (isConversationLocked || createSessionSending) {
       return;
     }
 
+    if (!normalizedMessage && filesToUpload.length === 0) {
+      return;
+    }
+
     setComposerText("");
+    if (filesToUpload.length > 0) {
+      const uploadIds = new Set(filesToUpload.map((file) => file.id));
+      setSelectedFiles((current) =>
+        current.map((file) =>
+          uploadIds.has(file.id)
+            ? {
+                ...file,
+                status: "uploading",
+                error: undefined,
+              }
+            : file,
+        ),
+      );
+      const uploaded = await uploadSelectedFiles(
+        filesToUpload,
+        filesToUpload.map((file) => file.file),
+      );
+      if (!uploaded) {
+        setComposerText(normalizedMessage);
+        return;
+      }
+    }
+
+    if (!normalizedMessage) {
+      return;
+    }
+
     const sent = await onSendMessage(normalizedMessage);
     if (!sent) {
       setComposerText(normalizedMessage);
@@ -568,10 +608,13 @@ export function CreatePage({
               content: assistant_response.message,
               payload: null,
               attachments: [],
+              card: null,
               created_at: createSession?.updated_at ?? new Date(0).toISOString(),
             },
           ]
         : [];
+  const hasAnchoredCard = visibleMessages.some((message) => message.card);
+  const fallbackCard = !hasAnchoredCard ? assistant_response?.card ?? null : null;
   const lastVisibleMessage = visibleMessages.at(-1);
   const shouldShowSuggestions = lastVisibleMessage?.role !== "user";
   const isPendingAssistantReply =
@@ -585,25 +628,16 @@ export function CreatePage({
     shouldShowSuggestions
       ? assistant_response.suggestions
       : [];
-  const card = assistant_response?.card ?? null;
   const shouldShowCardActions =
     createSession?.conversation_status === "ready_to_confirm" && !isConversationLocked;
   const shouldShowRevisionPrompt =
     currentJobStatus === "succeeded" && createSession?.conversation_status === "confirmed";
   const isCardLoading =
-    Boolean(card) &&
+    Boolean(fallbackCard || hasAnchoredCard) &&
     (createSessionPendingEventType === "chat" ||
       createSessionPendingEventType === "regenerate" ||
       createSessionPendingEventType === "confirm");
-  const boundFiles: CreateBoundFileItem[] =
-    createSession?.material_usage.assets.map((asset) => ({
-      id: asset.asset_id,
-      name: asset.filename,
-      size: asset.size_bytes,
-      mimeType: asset.mime_type,
-      status: "bound" as const,
-    })) ?? [];
-  const visibleFiles = [...boundFiles, ...selectedFiles];
+  const visibleFiles = selectedFiles;
   const jobProgress = getJobProgressView(currentJobStatus, agentLogs);
   const shouldShowGenerateEmptyState = !selectedTaskId && currentJobStatus === null;
   const selectedTask = tasks.find((task) => task.job_id === selectedTaskId) ?? null;
@@ -662,43 +696,74 @@ export function CreatePage({
           </div> */}
           <div className="conversation-scroll-shell">
             <div className="message-stream" ref={messageStreamRef}>
-              {visibleMessages.map((message) => (
-                <article
-                  className={`message-row ${message.role === "user" ? "user" : "agent"}`}
-                  key={message.id}
-                >
-                  <span className="message-avatar">
-                    {message.role === "user" && currentUser?.avatar_url ? (
-                      <img
-                        className="message-avatar-image"
-                        src={currentUser.avatar_url}
-                        alt=""
-                        aria-hidden="true"
-                      />
-                    ) : message.role === "user" ? (
-                      <span className="message-avatar-default" aria-hidden="true">
-                        {getUserAvatarInitial(currentUser)}
-                      </span>
-                    ) : (
-                      "AI"
-                    )}
-                  </span>
-                  <div className="message-bubble">
-                    {message.content.trim().length > 0 ? (
-                      <div className="message-content">{message.content}</div>
-                    ) : null}
-                    {message.attachments.length > 0 ? (
-                      <div className="message-attachments">
-                        {message.attachments.map((attachment) => (
-                          <span className="message-attachment-chip" key={attachment.id}>
-                            {attachment.name}
-                          </span>
-                        ))}
+              {visibleMessages.map((message) => {
+                const card = message.card;
+                return (
+                  <article
+                    className={`message-row ${message.role === "user" ? "user" : "agent"}`}
+                    key={message.id}
+                  >
+                    <span className="message-avatar">
+                      {message.role === "user" && currentUser?.avatar_url ? (
+                        <img
+                          className="message-avatar-image"
+                          src={currentUser.avatar_url}
+                          alt=""
+                          aria-hidden="true"
+                        />
+                      ) : message.role === "user" ? (
+                        <span className="message-avatar-default" aria-hidden="true">
+                          {getUserAvatarInitial(currentUser)}
+                        </span>
+                      ) : (
+                        "AI"
+                      )}
+                    </span>
+                    {card ? (
+                      <div className={`confirm-card ${isCardLoading ? "loading" : ""}`}>
+                        {isCardLoading ? <div className="confirm-card-status">生成中...</div> : null}
+                        <h2>{card.title}</h2>
+                        <p>{card.introduction}</p>
+                        {shouldShowCardActions ? (
+                          <div className="confirm-card-actions">
+                            <button
+                              className="primary-pill"
+                              disabled={isConversationLocked || createSessionSending}
+                              onClick={() => void onConfirmCard()}
+                              type="button"
+                            >
+                              确认
+                            </button>
+                            <button
+                              className="secondary-pill"
+                              disabled={isConversationLocked || createSessionSending}
+                              onClick={() => void onRegenerateCard()}
+                              type="button"
+                            >
+                              重新生成
+                            </button>
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-                  </div>
-                </article>
-              ))}
+                    ) : (
+                      <div className="message-bubble">
+                        {message.content.trim().length > 0 ? (
+                          <div className="message-content">{message.content}</div>
+                        ) : null}
+                        {message.attachments.length > 0 ? (
+                          <div className="message-attachments">
+                            {message.attachments.map((attachment) => (
+                              <span className="message-attachment-chip" key={attachment.id}>
+                                {attachment.name}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
 
               {suggestions.length > 0 ? (
                 <div className="suggestion-row" role="group" aria-label="建议答案">
@@ -716,13 +781,13 @@ export function CreatePage({
                 </div>
               ) : null}
 
-              {card ? (
+              {fallbackCard ? (
                 <article className="message-row agent">
                   <span className="message-avatar">AI</span>
                   <div className={`confirm-card ${isCardLoading ? "loading" : ""}`}>
                     {isCardLoading ? <div className="confirm-card-status">生成中...</div> : null}
-                    <h2>{card.title}</h2>
-                    <p>{card.introduction}</p>
+                    <h2>{fallbackCard.title}</h2>
+                    <p>{fallbackCard.introduction}</p>
                     {shouldShowCardActions ? (
                       <div className="confirm-card-actions">
                         <button
@@ -765,42 +830,32 @@ export function CreatePage({
                   <span className={`selected-file-chip ${file.status}`} key={file.id}>
                     <span className="selected-file-name">{file.name}</span>
                     <span className="selected-file-status">
-                      {file.status === "uploading" ? "上传中" : file.status === "failed" ? "上传失败" : "已绑定"}
+                      {file.status === "pending"
+                        ? "待发送"
+                        : file.status === "uploading"
+                          ? "上传中"
+                          : "上传失败"}
                     </span>
                     {file.error ? <span className="selected-file-error">{file.error}</span> : null}
-                    {file.status === "bound" ? (
+                    {file.status === "failed" && file.file ? (
                       <button
-                        aria-label={`删除附件 ${file.name}`}
-                        className="remove-file-button"
+                        className="retry-file-button"
                         disabled={isConversationLocked || createSessionSending}
-                        onClick={() => void onRemoveBoundFile(file.id)}
+                        onClick={() => handleRetryFile(file)}
                         type="button"
                       >
-                        x
+                        重试
                       </button>
-                    ) : (
-                      <>
-                        {file.status === "failed" && file.file ? (
-                          <button
-                            className="retry-file-button"
-                            disabled={isConversationLocked || createSessionSending}
-                            onClick={() => handleRetryFile(file)}
-                            type="button"
-                          >
-                            重试
-                          </button>
-                        ) : null}
-                        <button
-                          aria-label={`删除附件 ${file.name}`}
-                          className="remove-file-button"
-                          disabled={isConversationLocked}
-                          onClick={() => handleRemoveFile(file.id)}
-                          type="button"
-                        >
-                          x
-                        </button>
-                      </>
-                    )}
+                    ) : null}
+                    <button
+                      aria-label={`删除附件 ${file.name}`}
+                      className="remove-file-button"
+                      disabled={isConversationLocked}
+                      onClick={() => handleRemoveFile(file.id)}
+                      type="button"
+                    >
+                      x
+                    </button>
                   </span>
                 ))}
               </div>
@@ -865,11 +920,20 @@ export function CreatePage({
                     className="preview-cover-stage"
                     style={{ backgroundImage: `url("${previewCoverUrl}")` }}
                   >
+                    <img
+                      alt={selectedTask?.title ? `${selectedTask.title} 封面` : "游戏封面"}
+                      className="preview-cover-image"
+                      onError={(event) => {
+                        if (event.currentTarget.src !== fallbackCoverUrl) {
+                          event.currentTarget.src = fallbackCoverUrl;
+                        }
+                      }}
+                      src={previewCoverUrl}
+                    />
                     <div className="preview-cover-scrim" />
                     <div className="preview-cover-panel">
                       <p className="preview-cover-kicker">Draft Preview</p>
                       <strong>{selectedTask?.title ?? "游戏预览"}</strong>
-                      <span>先看封面，点击后再正式进入游戏。</span>
                       <button
                         className="primary-pill preview-start-button"
                         disabled={!selectedTask?.job_id || !previewUrls?.iframeSrc}
@@ -893,6 +957,7 @@ export function CreatePage({
                     <iframe
                       className="preview-sandbox-iframe"
                       sandbox="allow-scripts allow-same-origin"
+                      scrolling="no"
                       src={previewUrls.iframeSrc}
                       title={selectedTask?.title ?? "游戏预览"}
                     />
@@ -901,17 +966,8 @@ export function CreatePage({
                   <span>预览地址暂不可用</span>
                 )}
               </div>
-              {previewUrls?.bundleUrl ? (
-                <a
-                  className="preview-bundle-link"
-                  href={previewUrls.bundleUrl}
-                  rel="noreferrer"
-                  target="_blank"
-                >
-                  Bundle URL
-                </a>
-              ) : null}
-              <div className="action-row">
+              <div className="action-row preview-actions">
+                
                 <button
                   className="primary-pill"
                   disabled={!selectedTask?.game_id || isPublishingSelectedGame}

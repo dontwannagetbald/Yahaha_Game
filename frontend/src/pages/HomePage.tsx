@@ -64,7 +64,13 @@ export function HomePage({
               className="hero-spotlight-cover"
               style={{ backgroundImage: `url("${activeFeaturedGame.cover}")` }}
             >
-              <span className="tag">{activeFeaturedGame.tag}</span>
+              <div className="cover-tags">
+                {activeFeaturedGame.tags.map((tag) => (
+                  <span className="tag" key={tag}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
             </div>
             <div className="hero-spotlight-body">
               <p className="hero-spotlight-label">精选推荐</p>
@@ -187,7 +193,7 @@ export function HomePage({
         </section>
 
         <section className="catalog-grid" aria-label="游戏列表">
-          {isLoading ? (
+          {isLoading && games.length === 0 ? (
             <article className="catalog-empty">
               <p>正在加载游戏列表...</p>
             </article>
@@ -210,7 +216,11 @@ export function HomePage({
                     <div className="cover" style={{ backgroundImage: `url("${game.cover}")` }}>
                       <div className="cover-overlay">
                         <div className="cover-tags">
-                          <span className="tag">{game.tag}</span>
+                          {game.tags.map((tag) => (
+                            <span className="tag" key={tag}>
+                              {tag}
+                            </span>
+                          ))}
                         </div>
                         <div className="cover-stats">
                           <button

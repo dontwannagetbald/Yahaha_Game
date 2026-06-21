@@ -42,6 +42,7 @@ const requiredPageTokens = [
   "className=\"preview-frame preview-sandbox\"",
   "!hasStartedPreview ? (",
   "className=\"preview-cover-stage\"",
+  "className=\"preview-cover-image\"",
   "className=\"preview-cover-panel\"",
   "开始游玩",
   "setStartedPreviewTaskIds((current) => ({",
@@ -49,9 +50,7 @@ const requiredPageTokens = [
   "className=\"preview-sandbox-iframe\"",
   "sandbox=\"allow-scripts allow-same-origin\"",
   "title={selectedTask?.title ?? \"游戏预览\"}",
-  "previewUrls?.bundleUrl ? (",
-  "className=\"preview-bundle-link\"",
-  "Bundle URL",
+  "className=\"action-row preview-actions\"",
   "className=\"agent-status-scroll\"",
 ];
 
@@ -82,6 +81,9 @@ const requiredCssTokens = [
   "height: calc(100vh - 56px)",
   "overflow: hidden",
   "grid-template-columns: 430px minmax(0, 1fr)",
+  "width: 100%",
+  "max-width: 100vw",
+  "box-sizing: border-box",
   ".create-page .agent-status-scroll",
   "max-height: 222px",
   "overflow-y: auto",
@@ -91,15 +93,61 @@ const requiredCssTokens = [
   "padding: 12px 18px 18px",
   ".create-page .preview-frame.preview-sandbox",
   ".create-page .preview-cover-stage",
+  ".create-page .preview-cover-image",
   ".create-page .preview-cover-panel",
   ".create-page .preview-runtime-shell",
   ".create-page .preview-start-button",
   ".create-page .preview-sandbox-iframe",
-  ".create-page .preview-bundle-link",
+  "contain: layout paint size",
+  "overscroll-behavior: contain",
+  "clip-path: inset(0 round 18px)",
+  "place-items: center",
+  "aspect-ratio: 16 / 9",
   ".create-page .preview-frame.preview-sandbox canvas",
+  ".create-page .action-row.preview-actions",
+  "inline-size: min(100%, calc(100% - clamp(28px, 4vw, 64px)))",
+  "align-self: end",
+  "justify-content: flex-end",
+  "padding: 0 clamp(18px, 3vw, 40px) clamp(10px, 1.4vw, 18px)",
 ];
 
 const failures = [];
+
+if (!createPage.includes('sandbox="allow-scripts allow-same-origin"')) {
+  failures.push("Expected Create draft preview iframe to allow same-origin so authenticated artifact subresources can load.");
+}
+
+if (
+  !/\.create-page \.preview-frame\.preview-sandbox\s*\{[^}]*place-items:\s*center;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview sandbox to center the game stage instead of stretching it to the whole panel.");
+}
+
+if (
+  !/\.create-page \.preview-runtime-shell,\s*\.create-page \.preview-cover-stage\s*\{[^}]*inline-size:\s*min\(100%, calc\(100% - clamp\(28px, 4vw, 64px\)\)\);[^}]*max-inline-size:\s*100%;[^}]*max-block-size:\s*100%;[^}]*aspect-ratio:\s*16 \/ 9;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview cover and runtime shell to share an inset 16:9 stage constrained by sandbox bounds.");
+}
+
+if (
+  !/\.create-page \.preview-runtime-shell\s*\{[^}]*display:\s*grid;[^}]*place-items:\s*stretch;[^}]*contain:\s*layout paint size;[^}]*overscroll-behavior:\s*contain;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview runtime shell to contain generated game layout and overscroll inside the sandbox.");
+}
+
+if (
+  !/\.create-page \.preview-sandbox-iframe\s*\{[^}]*inline-size:\s*100%;[^}]*block-size:\s*100%;[^}]*max-width:\s*100%;[^}]*max-height:\s*100%;[^}]*clip-path:\s*inset\(0 round 18px\);[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview iframe to be clipped and constrained to the sandbox bounds.");
+}
 
 for (const token of requiredPageTokens) {
   if (!createPage.includes(token)) {
@@ -196,13 +244,33 @@ if (
 }
 
 if (
-  !/currentJobStatus === "succeeded"\s*\?\s*\([\s\S]*className="preview-frame preview-sandbox"[\s\S]*!hasStartedPreview\s*\?\s*\([\s\S]*className="preview-cover-stage"[\s\S]*开始游玩[\s\S]*\)\s*:\s*previewUrls\?\.iframeSrc\s*\?\s*\([\s\S]*className="preview-runtime-shell"[\s\S]*<iframe[\s\S]*className="preview-sandbox-iframe"[\s\S]*previewUrls\?\.bundleUrl[\s\S]*className="preview-bundle-link"/s.test(
+  !/currentJobStatus === "succeeded"\s*\?\s*\([\s\S]*className="preview-frame preview-sandbox"[\s\S]*!hasStartedPreview\s*\?\s*\([\s\S]*className="preview-cover-stage"[\s\S]*开始游玩[\s\S]*\)\s*:\s*previewUrls\?\.iframeSrc\s*\?\s*\([\s\S]*className="preview-runtime-shell"[\s\S]*<iframe[\s\S]*className="preview-sandbox-iframe"[\s\S]*className="action-row preview-actions"[\s\S]*发布/s.test(
     createPage,
   )
 ) {
   failures.push(
-    "Expected succeeded CreatePage workspace panel to render a cover gate first, then mount the preview iframe only after 开始游玩, while keeping the bundle URL link.",
+    "Expected succeeded CreatePage workspace panel to render a cover gate first, then mount the preview iframe only after 开始游玩, with Publish actions below.",
   );
+}
+
+if (createPage.includes("先看封面，点击后再正式进入游戏。")) {
+  failures.push("Expected Create preview cover panel to remove the explanatory helper text.");
+}
+
+if (
+  !/className="preview-cover-stage"[\s\S]*<img[\s\S]*className="preview-cover-image"[\s\S]*src=\{previewCoverUrl\}/s.test(
+    createPage,
+  )
+) {
+  failures.push("Expected Create preview cover stage to render the cover as a visible image layer.");
+}
+
+if (
+  !/onError=\{\(event\) => \{[\s\S]*event\.currentTarget\.src = fallbackCoverUrl;[\s\S]*\}\}/s.test(
+    createPage,
+  )
+) {
+  failures.push("Expected Create preview cover image to fall back when the cover URL fails to load.");
 }
 
 if (createPage.includes("onRedoGeneratedGame") || createPage.includes("重做")) {
@@ -251,6 +319,30 @@ if (
   )
 ) {
   failures.push("Expected preview sandbox canvas to stay within the panel bounds.");
+}
+
+if (
+  !/\.create-page \.create-side-panel,\s*\.create-page \.workspace-stage,\s*\.create-page \.generate-panel\s*\{[^}]*min-width:\s*0;[^}]*max-width:\s*100%;[^}]*box-sizing:\s*border-box;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected Create layout columns and generated panel to shrink within the viewport.");
+}
+
+if (
+  !/\.create-page \.preview-runtime-shell,\s*\.create-page \.preview-cover-stage\s*\{[^}]*inline-size:\s*min\(100%, calc\(100% - clamp\(28px, 4vw, 64px\)\)\);[^}]*justify-self:\s*center;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected preview cover and runtime shell to stay inset from the right edge of the sandbox.");
+}
+
+if (
+  !/\.create-page \.action-row\.preview-actions\s*\{[^}]*align-self:\s*end;[^}]*justify-content:\s*flex-end;[^}]*width:\s*100%;[^}]*max-width:\s*100%;[^}]*padding:\s*0 clamp\(18px, 3vw, 40px\) clamp\(10px, 1\.4vw, 18px\);[^}]*box-sizing:\s*border-box;[^}]*\}/s.test(
+    createCss,
+  )
+) {
+  failures.push("Expected Publish action to stay in the bottom-right safe area of the preview panel.");
 }
 
 if (failures.length > 0) {

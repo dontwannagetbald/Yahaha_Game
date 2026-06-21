@@ -14,6 +14,23 @@ def test_generation_provider_reuses_shared_provider_config() -> None:
     assert isinstance(provider, MockLLMProvider)
 
 
+def test_generation_graph_coding_provider_uses_coding_agent_model(monkeypatch) -> None:
+    from agent.generation_graph import graph as graph_module
+    from agent.generation_graph.state import GenerationState
+    from agent.providers import OpenAICompatibleLLMProvider
+
+    monkeypatch.setenv("LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_BASE_URL", "https://llm.example/v1")
+    monkeypatch.setenv("OPENAI_COMPATIBLE_MODEL", "general-model")
+    monkeypatch.setenv("CODING_AGENT_MODEL", "gpt-5.5")
+
+    provider = graph_module._coding_provider_from_env(GenerationState())
+
+    assert isinstance(provider, OpenAICompatibleLLMProvider)
+    assert provider._config.model == "gpt-5.5"
+
+
 def test_generation_provider_smoke_uses_json_schema_and_safe_summary() -> None:
     provider = MockLLMProvider(
         response={

@@ -37,6 +37,8 @@ cp .env.example .env
 docker compose --profile docker-frontend up --build
 ```
 
+backend 容器启动时会自动执行 seed，所以评委首次打开 `http://localhost:5173` 时，Home 默认就能看到 3 个已发布示例游戏：`被误解的女巫：符文真相`、`精灵小兽`、`哈利的魔法追击`。
+
 如需本地启动 LangGraph 调试界面，可额外执行：
 
 ```bash
@@ -59,7 +61,7 @@ npm run dev
 
 ## 测试数据
 
-PRD 要求系统至少提供 3 个示例游戏，且至少 1 个来自 Create 发布闭环。当前仓库已实现可重复执行的 seed 能力，并内置 2 个 published 示例游戏 `Sky Runner` 与 `Pixel Raid`；示例数据会写入真实数据库与 MinIO 的 `published/*` 路径。详细说明见 [docs/progress.md](./docs/progress.md) 和 [docs/design-document.md](./docs/design-document.md)。
+PRD 要求系统至少提供 3 个示例游戏，且至少 1 个来自 Create 发布闭环。当前仓库已实现可重复执行的 seed 能力，并以内置 `examples/` 目录中的 3 套真实 bundle 作为 published 示例游戏来源：`被误解的女巫：符文真相`、`精灵小兽`、`哈利的魔法追击`。backend 容器启动时会自动把这 3 个游戏写入真实数据库与 MinIO 的 `published/*` 路径，因此默认启动后首页即可直接看到它们。详细说明见 [docs/progress.md](./docs/progress.md) 和 [docs/design-document.md](./docs/design-document.md)。
 
 ## 环境变量
 

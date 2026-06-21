@@ -70,6 +70,48 @@ const THINKING_MESSAGE_DELAY_MS = 1000;
 const JOB_POLL_INTERVAL_MS = 1500;
 const CREATE_REVISION_ACK_MESSAGE = "好的，这就为您修改";
 const CREATE_SUCCESS_REVISION_PROMPT = "有想要修改的地方欢迎随时告诉我～";
+const AUTH_USER_CACHE_KEY = "yahaha.currentUser";
+
+function readCachedAuthUser(): AuthUser | null {
+  try {
+    const rawUser = window.localStorage.getItem(AUTH_USER_CACHE_KEY);
+    if (!rawUser) {
+      return null;
+    }
+    const user = JSON.parse(rawUser) as Partial<AuthUser>;
+    if (typeof user.user_id !== "string") {
+      return null;
+    }
+    return {
+      user_id: user.user_id,
+      email: typeof user.email === "string" ? user.email : null,
+      display_name: typeof user.display_name === "string" ? user.display_name : null,
+      avatar_url: typeof user.avatar_url === "string" ? user.avatar_url : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedAuthUser(user: AuthUser | null): void {
+  if (!user) {
+    clearCachedAuthUser();
+    return;
+  }
+  try {
+    window.localStorage.setItem(AUTH_USER_CACHE_KEY, JSON.stringify(user));
+  } catch {
+    return;
+  }
+}
+
+function clearCachedAuthUser(): void {
+  try {
+    window.localStorage.removeItem(AUTH_USER_CACHE_KEY);
+  } catch {
+    return;
+  }
+}
 
 function buildValidationReportDetails(
   validationReport: Record<string, unknown> | null,
@@ -83,6 +125,26 @@ function buildValidationReportDetails(
   } catch {
     return String(validationReport);
   }
+}
+
+function buildGenerationFailureNextStep(task: CreateTaskItem): string {
+  const message = (task.error_message ?? "").toLowerCase();
+  if (
+    message.includes("llm provider") ||
+    message.includes("temperature") ||
+    message.includes("timeout") ||
+    message.includes("timed out") ||
+    message.includes("http error") ||
+    message.includes("model")
+  ) {
+    return "模型服务调用失败，系统会对临时请求失败自动重试一次；请稍后重新生成，或检查模型服务配置。";
+  }
+
+  if (task.validation_report) {
+    return "请根据 validation_report 调整素材或重试生成。";
+  }
+
+  return "请稍后重新生成，或补充修改要求后再试。";
 }
 
 function getOptionalJobField(job: object, field: string): unknown {
@@ -147,6 +209,7 @@ export function App() {
   const [createSessionLoading, setCreateSessionLoading] = useState(false);
   const [createSessionError, setCreateSessionError] = useState<UserFacingError | null>(null);
   const [createDialogError, setCreateDialogError] = useState<UserFacingError | null>(null);
+  const [retryableFailedTaskId, setRetryableFailedTaskId] = useState<string | null>(null);
   const [createSessionSending, setCreateSessionSending] = useState(false);
   const [publishingGameId, setPublishingGameId] = useState<string | null>(null);
   const [createSessionPendingEventType, setCreateSessionPendingEventType] = useState<
@@ -156,8 +219,8 @@ export function App() {
   const [allGames, setAllGames] = useState<Game[]>([]);
   const [gamesLoading, setGamesLoading] = useState(false);
   const [gamesError, setGamesError] = useState<UserFacingError | null>(null);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => Boolean(readCachedAuthUser()));
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => readCachedAuthUser());
   const [authOpen, setAuthOpen] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authEmail, setAuthEmail] = useState("");
@@ -199,6 +262,7 @@ export function App() {
       if (mockEnabled) {
         setCurrentUser(mockAuthStore.currentUser);
         setIsLoggedIn(Boolean(mockAuthStore.currentUser));
+        writeCachedAuthUser(mockAuthStore.currentUser);
         logConsoleEvent("auth", {
           requestPath: "/api/auth/me",
           status: 200,
@@ -216,6 +280,7 @@ export function App() {
         }
         setCurrentUser(response.user);
         setIsLoggedIn(Boolean(response.user));
+        writeCachedAuthUser(response.user);
         if (response.user) {
           console.info("[auth] current user restored");
           logConsoleEvent("auth", {
@@ -237,7 +302,9 @@ export function App() {
             businessStatus: "error",
             error_code: error instanceof ApiError ? error.code : "unknown_error",
           });
+          return;
         }
+        clearCachedAuthUser();
         setCurrentUser(null);
         setIsLoggedIn(false);
       } finally {
@@ -353,6 +420,7 @@ export function App() {
   function completeAuthenticatedFlow(user: AuthUser, source: "login" | "register") {
     setCurrentUser(user);
     setIsLoggedIn(true);
+    writeCachedAuthUser(user);
     setAuthOpen(false);
     resetAuthForm();
     const nextPath = authRedirectPath ?? "/";
@@ -376,7 +444,13 @@ export function App() {
   }
 
   function alertCreateBackendError(userError: UserFacingError) {
+    setRetryableFailedTaskId(null);
     setCreateDialogError(userError);
+  }
+
+  function dismissCreateDialogError() {
+    setRetryableFailedTaskId(null);
+    setCreateDialogError(null);
   }
 
   function prependCreateTask(task: CreateTaskItem) {
@@ -505,9 +579,12 @@ export function App() {
           title: "任务生成失败",
           message: nextTask.error_message ?? "生成失败，请查看 validation_report。",
           retryHint: null,
-          nextStep: "请根据 validation_report 调整素材或重试生成。",
+          nextStep: buildGenerationFailureNextStep(nextTask),
           details: buildValidationReportDetails(nextTask.validation_report),
         });
+        if (nextTask.session_id) {
+          setRetryableFailedTaskId(nextTask.job_id);
+        }
       }
 
       logConsoleEvent("create", {
@@ -628,8 +705,22 @@ export function App() {
 
     try {
       const response = mockEnabled ? listMockJobs() : await listJobs();
-      setCreateTasks(response.jobs.map(mapRawJobToCreateTask));
-      const recoverableTask = response.jobs.find((task) => task.session_id);
+      const nextTasks = response.jobs.map(mapRawJobToCreateTask);
+      setCreateTasks(nextTasks);
+      const selectedTaskStillExists = selectedTaskId
+        ? nextTasks.some((task) => task.job_id === selectedTaskId)
+        : false;
+      if (selectedTaskStillExists && selectedCreateSessionId) {
+        logConsoleEvent("create", {
+          requestPath: "/api/jobs",
+          status: 200,
+          businessStatus: mockEnabled ? "mock_jobs" : "loaded",
+          count: response.jobs.length,
+          retained_selected_task_id: selectedTaskId,
+        });
+        return;
+      }
+      const recoverableTask = nextTasks.find((task) => task.session_id);
       if (recoverableTask) {
         void handleSelectCreateTask(recoverableTask);
       } else if (location.pathname === "/create") {
@@ -697,7 +788,7 @@ export function App() {
     setSelectedTaskId(task.job_id);
     setCurrentJobStatus(task.status);
     setCreateSessionError(null);
-    setCreateDialogError(null);
+    dismissCreateDialogError();
 
     if (!task.session_id) {
       setSelectedCreateSessionId(null);
@@ -749,6 +840,80 @@ export function App() {
       });
     } finally {
       setCreateSessionLoading(false);
+    }
+  }
+
+  async function handleRetryFailedGenerationTask(): Promise<void> {
+    if (!retryableFailedTaskId || createSessionSending) {
+      return;
+    }
+
+    const failedTask = createTasks.find((task) => task.job_id === retryableFailedTaskId);
+    if (!failedTask?.session_id) {
+      const userError = createUserError(
+        "重新生成失败",
+        new Error("当前失败任务缺少原始 Create 会话，无法复用原参数。"),
+        "请从聊天区重新确认生成。",
+      );
+      alertCreateBackendError(userError);
+      return;
+    }
+
+    dismissCreateDialogError();
+    setCreateSessionSending(true);
+    setCreateSessionPendingEventType("confirm");
+    setCreateSessionError(null);
+
+    try {
+      const session =
+        createSession?.session_id === failedTask.session_id
+          ? createSession
+          : mockEnabled
+            ? getMockCreateSession(failedTask.session_id)
+            : await getCreateSession(failedTask.session_id);
+
+      if (!session) {
+        throw new Error("未找到失败任务关联的 Create 会话。");
+      }
+
+      if (session.conversation_status !== "confirmed") {
+        throw new Error("原始 Create 会话尚未确认，无法直接重新生成。");
+      }
+
+      setCreateSession(session);
+      setSelectedCreateSessionId(session.session_id);
+
+      await createGenerationJobFromSession(session, {
+        fallbackTitle: failedTask.title,
+        eventType: "confirm",
+      });
+
+      logConsoleEvent("create", {
+        requestPath: "/api/jobs",
+        status: mockEnabled ? 200 : 201,
+        businessStatus: mockEnabled ? "mock_failed_job_retry_created" : "failed_job_retry_created",
+        previous_job_id: failedTask.job_id,
+        session_id: session.session_id,
+      });
+    } catch (error) {
+      const userError = createUserError(
+        "重新生成失败",
+        error,
+        "请稍后再试，或在聊天区补充修改要求后重新生成。",
+      );
+      setCreateSessionError(userError);
+      alertCreateBackendError(userError);
+      logConsoleEvent("create", {
+        requestPath: "/api/jobs",
+        status: error instanceof ApiError ? error.status : 500,
+        businessStatus: "error",
+        event_type: "failed_job_retry",
+        previous_job_id: failedTask.job_id,
+        error_code: error instanceof ApiError ? error.code : "unknown_error",
+      });
+    } finally {
+      setCreateSessionSending(false);
+      setCreateSessionPendingEventType(null);
     }
   }
 
@@ -1697,6 +1862,7 @@ export function App() {
         await logoutRequest();
       }
       mockAuthStore.currentUser = null;
+      clearCachedAuthUser();
       setCurrentUser(null);
       setIsLoggedIn(false);
       setCreateTasks([]);
@@ -1814,7 +1980,12 @@ export function App() {
       {authDialog ? <ErrorDialog error={authDialog} onClose={() => setAuthDialog(null)} /> : null}
       {gamesError ? <ErrorDialog error={gamesError} onClose={() => setGamesError(null)} /> : null}
       {createDialogError ? (
-        <ErrorDialog error={createDialogError} onClose={() => setCreateDialogError(null)} />
+        <ErrorDialog
+          error={createDialogError}
+          confirmLabel={retryableFailedTaskId ? "重新生成" : "知道了"}
+          onClose={dismissCreateDialogError}
+          onConfirm={retryableFailedTaskId ? () => void handleRetryFailedGenerationTask() : undefined}
+        />
       ) : null}
       {createLoginPromptOpen ? (
         <ErrorDialog
@@ -1877,7 +2048,6 @@ export function App() {
               onRegenerateCard={handleRegenerateCreateCard}
               onSendMessage={handleSendCreateMessage}
               onUploadFiles={handleUploadCreateFiles}
-              onRemoveBoundFile={handleRemoveBoundCreateFile}
             />
           }
         />

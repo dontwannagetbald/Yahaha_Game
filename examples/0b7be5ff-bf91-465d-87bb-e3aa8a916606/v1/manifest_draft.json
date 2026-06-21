@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "title": "哈利的魔法追击",
+  "description": "这是一款巫师风格的单人追逐游戏，玩家操控哈利在魔法世界中追赶伏地魔，必须在时间耗尽前把他追上。通过移动、冲刺和躲避不断逼近目标，追到伏地魔即可获胜，倒计时归零则失败。",
+  "entry": "index.html",
+  "styles": [
+    "style.css"
+  ],
+  "scripts": [
+    "game.js"
+  ],
+  "assets": [],
+  "cover": "assets/cover.png",
+  "controls": [
+    "方向键或WASD移动；Shift冲刺；无复杂技能栏。"
+  ],
+  "runtime": "html5-iframe",
+  "generatedAt": "2026-06-21T17:36:23.896218Z"
+}

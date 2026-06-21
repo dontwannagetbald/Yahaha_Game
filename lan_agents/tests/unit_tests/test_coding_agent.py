@@ -93,6 +93,45 @@ def test_draft_code_rejects_external_cdn_reference(tmp_path: Path) -> None:
         draft_code(state, provider=provider)
 
 
+def test_draft_code_allows_ui_text_fraction_that_starts_with_slash(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.coding_agent.draft_code.node import draft_code
+
+    state = _build_coding_state(tmp_path)
+    state.asset_manifest_plan = []
+    state.development_brief["allowed_asset_paths"] = []
+    provider = MockLLMProvider(
+        response={
+            "index_html": "<!doctype html><html><head><link rel='stylesheet' href='style.css'></head><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+            "style_css": "body { margin: 0; }",
+            "game_js": "let clues=0; progress.textContent='线索 '+clues+'/6';",
+            "coding_notes": [],
+        }
+    )
+
+    update = draft_code(state, provider=provider)
+
+    assert update["manifest_draft"]["assets"] == []
+
+
+def test_draft_code_rejects_absolute_local_path(tmp_path: Path) -> None:
+    from agent.generation_graph.coding_agent.draft_code.node import draft_code
+
+    state = _build_coding_state(tmp_path)
+    provider = MockLLMProvider(
+        response={
+            "index_html": "<!doctype html><html><head><link rel='stylesheet' href='style.css'></head><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+            "style_css": "body { margin: 0; }",
+            "game_js": "const bad='/Users/root1/workspace/Yahaha_Game/assets/player.png';",
+            "coding_notes": [],
+        }
+    )
+
+    with pytest.raises(ProviderError, match="absolute local path"):
+        draft_code(state, provider=provider)
+
+
 def test_draft_code_rejects_asset_reference_outside_manifest_plan(tmp_path: Path) -> None:
     from agent.generation_graph.coding_agent.draft_code.node import draft_code
 
@@ -149,7 +188,7 @@ def test_draft_code_requests_large_token_budget_for_real_bundle_output(
 
     draft_code(state, provider=provider)
 
-    assert provider.calls[0]["max_tokens"] >= 5000
+    assert provider.calls[0]["max_completion_tokens"] >= 12000
 
 
 def test_draft_code_prompt_enforces_compact_json_safe_bundle_output(
@@ -176,7 +215,7 @@ def test_draft_code_prompt_enforces_compact_json_safe_bundle_output(
     assert "game_ready" in system_prompt
 
 
-def test_draft_code_uses_deterministic_temperature_for_real_provider(
+def test_draft_code_uses_default_temperature_for_real_provider(
     tmp_path: Path,
 ) -> None:
     from agent.generation_graph.coding_agent.draft_code.node import draft_code
@@ -187,13 +226,13 @@ def test_draft_code_uses_deterministic_temperature_for_real_provider(
             "index_html": "<!doctype html><html><head><link rel='stylesheet' href='style.css'></head><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
             "style_css": "body { margin: 0; background: #101418; }",
             "game_js": "const player = 'assets/player.png'; console.log(player);",
-            "coding_notes": ["deterministic output matters for JSON stability"],
+            "coding_notes": ["default temperature matches gpt-5.5 constraints"],
         }
     )
 
     draft_code(state, provider=provider)
 
-    assert provider.calls[0]["temperature"] == 0.0
+    assert provider.calls[0]["temperature"] == 1.0
 
 
 def test_draft_code_accepts_single_string_coding_note(tmp_path: Path) -> None:
@@ -271,3 +310,102 @@ def test_draft_code_retries_once_when_provider_returns_invalid_json(
 
     assert update["coding_notes"] == ["retry succeeded"]
     assert len(provider.calls) == 2
+
+
+def test_draft_code_retries_once_when_provider_request_fails(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.coding_agent.draft_code.node import draft_code
+
+    class FlakyRequestProvider:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def complete_json(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                raise ProviderError("LLM provider request failed: TimeoutError: timed out")
+            return {
+                "index_html": "<!doctype html><html><head><link rel='stylesheet' href='style.css'></head><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+                "style_css": "body { margin: 0; background: #101418; }",
+                "game_js": "const player = 'assets/player.png'; console.log(player);",
+                "coding_notes": ["request retry succeeded"],
+            }
+
+    state = _build_coding_state(tmp_path)
+    provider = FlakyRequestProvider()
+
+    update = draft_code(state, provider=provider)
+
+    assert update["coding_notes"] == ["request retry succeeded"]
+    assert len(provider.calls) == 2
+
+
+def test_draft_code_retries_once_when_provider_exhausts_completion_budget(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.coding_agent.draft_code.node import draft_code
+
+    class TruncatedProvider:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def complete_json(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                raise ProviderError(
+                    "LLM provider stopped because max_completion_tokens was exhausted "
+                    "(finish_reason=length, completion_tokens=5200, reasoning_tokens=5200)"
+                )
+            return {
+                "index_html": "<!doctype html><html><head><link rel='stylesheet' href='style.css'></head><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+                "style_css": "body { margin: 0; background: #101418; }",
+                "game_js": "const player = 'assets/player.png'; console.log(player);",
+                "coding_notes": ["length retry succeeded"],
+            }
+
+    state = _build_coding_state(tmp_path)
+    provider = TruncatedProvider()
+
+    update = draft_code(state, provider=provider)
+
+    assert update["coding_notes"] == ["length retry succeeded"]
+    assert len(provider.calls) == 2
+
+
+def test_draft_code_retries_once_with_safety_feedback(
+    tmp_path: Path,
+) -> None:
+    from agent.generation_graph.coding_agent.draft_code.node import draft_code
+
+    class SafetyRetryProvider:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def complete_json(self, **kwargs):  # type: ignore[no-untyped-def]
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                return {
+                    "index_html": "<!doctype html><html><head><script src='https://cdn.example.com/phaser.js'></script></head><body><script src='game.js'></script></body></html>",
+                    "style_css": "body { margin: 0; }",
+                    "game_js": "console.log('unsafe first draft');",
+                    "coding_notes": ["first draft used a CDN"],
+                }
+            return {
+                "index_html": "<!doctype html><html><head><link rel='stylesheet' href='style.css'></head><body><canvas id='game'></canvas><script src='game.js'></script></body></html>",
+                "style_css": "body { margin: 0; }",
+                "game_js": "const canvas = document.getElementById('game'); console.log(canvas);",
+                "coding_notes": ["fixed unsafe reference after feedback"],
+            }
+
+    state = _build_coding_state(tmp_path)
+    state.asset_manifest_plan = []
+    provider = SafetyRetryProvider()
+
+    update = draft_code(state, provider=provider)
+
+    assert update["coding_notes"] == ["fixed unsafe reference after feedback"]
+    assert len(provider.calls) == 2
+    retry_payload = provider.calls[1]["messages"][1].content
+    assert "previous_attempt_error" in retry_payload
+    assert "remote or CDN reference" in retry_payload

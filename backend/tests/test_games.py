@@ -90,6 +90,20 @@ def seed_games(session_factory):
                 published_at=now - timedelta(days=1),
                 created_at=now - timedelta(days=1),
             )
+            published_chinese_tag = Game(
+                owner_id=owner_id,
+                title="Chinese Adventure",
+                description="Seeded with localized tags",
+                cover_url="https://example.com/chinese.png",
+                tags=["冒险", "动作"],
+                status="published",
+                manifest_url="https://example.com/chinese-manifest.json",
+                artifact_base_url="https://example.com/chinese/",
+                play_count=12,
+                like_count=4,
+                published_at=now - timedelta(hours=1),
+                created_at=now - timedelta(hours=1),
+            )
             draft_game = Game(
                 owner_id=owner_id,
                 title="Draft Secret",
@@ -111,7 +125,13 @@ def seed_games(session_factory):
                 created_at=now - timedelta(days=3),
             )
             session.add_all(
-                [published_latest, published_popular, draft_game, deleted_game]
+                [
+                    published_latest,
+                    published_popular,
+                    published_chinese_tag,
+                    draft_game,
+                    deleted_game,
+                ]
             )
             await session.commit()
             return {
@@ -119,6 +139,7 @@ def seed_games(session_factory):
                 "other_owner_id": str(other_owner_id),
                 "published_latest": str(published_latest.id),
                 "published_popular": str(published_popular.id),
+                "published_chinese_tag": str(published_chinese_tag.id),
                 "draft_game": str(draft_game.id),
                 "deleted_game": str(deleted_game.id),
             }
@@ -150,8 +171,12 @@ def test_list_published_games_only(client: TestClient, session_factory):
     assert response.status_code == 200
     body = response.json()
     returned_ids = {game["id"] for game in body["games"]}
-    assert returned_ids == {ids["published_latest"], ids["published_popular"]}
-    assert body["total"] == 2
+    assert returned_ids == {
+        ids["published_latest"],
+        ids["published_popular"],
+        ids["published_chinese_tag"],
+    }
+    assert body["total"] == 3
     assert {"title", "description", "cover_url", "tags", "published_at"}.issubset(
         body["games"][0].keys()
     )
@@ -174,6 +199,26 @@ def test_games_sorting_and_filters(client: TestClient, session_factory):
     assert [game["title"] for game in search.json()["games"]] == ["Popular Quest"]
     assert [game["title"] for game in tag.json()["games"]] == ["Latest Runner"]
     assert invalid.status_code == 400
+
+
+def test_games_tag_filter_matches_localized_seed_tags(
+    client: TestClient, session_factory
+):
+    seed_games(session_factory)
+
+    canonical = client.get("/api/games", params={"tag": "adventure"})
+    localized = client.get("/api/games", params={"tag": "冒险"})
+
+    assert canonical.status_code == 200
+    assert localized.status_code == 200
+    assert [game["title"] for game in canonical.json()["games"]] == [
+        "Chinese Adventure",
+        "Popular Quest",
+    ]
+    assert [game["title"] for game in localized.json()["games"]] == [
+        "Chinese Adventure",
+        "Popular Quest",
+    ]
 
 
 def test_game_meta_permissions(client: TestClient, session_factory):

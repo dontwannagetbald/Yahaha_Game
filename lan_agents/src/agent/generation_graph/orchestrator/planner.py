@@ -134,15 +134,15 @@ class OrchestratorPlanner:
                     messages=messages,
                     response_schema=ORCHESTRATOR_SCHEMA,
                     attachments=attachments,
-                    temperature=0.2,
-                    max_tokens=2200,
+                    temperature=1.0,
+                    max_completion_tokens=2200,
                 )
             else:
                 llm_result = self._provider.complete_json(
                     messages=messages,
                     response_schema=ORCHESTRATOR_SCHEMA,
-                    temperature=0.2,
-                    max_tokens=2200,
+                    temperature=1.0,
+                    max_completion_tokens=2200,
                 )
         except Exception as exc:
             reason = str(exc).strip()

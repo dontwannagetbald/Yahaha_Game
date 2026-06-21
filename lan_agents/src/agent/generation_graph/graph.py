@@ -21,7 +21,7 @@ from agent.generation_graph.tools.workspace import prepare_workspace, write_work
 from agent.generation_graph.validator_agent.validate_final_delivery.node import (
     validate_final_delivery,
 )
-from agent.providers import MockLLMProvider, ProviderConfig, provider_from_env
+from agent.providers import MockLLMProvider, ProviderConfig, provider_from_config
 
 
 def init_generation_context(state: GenerationState) -> dict[str, Any]:
@@ -97,15 +97,32 @@ def generate_requested_assets(state: GenerationState) -> dict[str, Any]:
 
 
 def debug_game_code(state: GenerationState) -> dict[str, Any]:
-    update = debug_code_with_assets(state)
+    repairing_validation_failure = state.validation_report.get("valid") is False
+    update = debug_code_with_assets(state, provider=_coding_provider_from_env(state))
+    next_repair_count = (
+        state.coding_repair_attempt_count + 1
+        if repairing_validation_failure
+        else state.coding_repair_attempt_count
+    )
+    step = (
+        "coding_agent.repair_code"
+        if repairing_validation_failure
+        else "debug_code_with_assets"
+    )
+    message = (
+        "Repaired bundle using validation_report feedback."
+        if repairing_validation_failure
+        else "Completed bundle debug checks."
+    )
     return {
         **update,
+        "coding_repair_attempt_count": next_repair_count,
         "agent_logs": [
             *state.agent_logs,
             {
-                "step": "debug_code_with_assets",
+                "step": step,
                 "level": "info",
-                "message": "Completed bundle debug checks.",
+                "message": message,
             },
         ],
     }
@@ -179,17 +196,22 @@ def route_after_orchestrator(state: GenerationState) -> Literal["assets", "debug
     return "debug"
 
 
-def route_after_validation(state: GenerationState) -> Literal["success", "failure"]:
+def route_after_validation(state: GenerationState) -> Literal["success", "repair", "failure"]:
     if state.validation_report.get("valid") is True and state.generation_status == "succeeded":
         return "success"
+    if state.coding_repair_attempt_count < 1:
+        return "repair"
     return "failure"
 
 
 def _coding_provider_from_env(state: GenerationState):
-    provider_name = ProviderConfig.from_env().provider.lower()
-    if provider_name == "mock":
+    config = ProviderConfig.from_env(
+        model_env_name="CODING_AGENT_MODEL",
+        fallback_model_env_name="OPENAI_COMPATIBLE_MODEL",
+    )
+    if config.provider.lower() == "mock":
         return MockLLMProvider(response=_mock_code_response(state))
-    return provider_from_env()
+    return provider_from_config(config)
 
 
 def _mock_code_response(state: GenerationState) -> dict[str, Any]:
@@ -317,6 +339,7 @@ workflow.add_conditional_edges(
     route_after_validation,
     {
         "success": "finalize_success",
+        "repair": "debug_agent",
         "failure": "finalize_failure",
     },
 )

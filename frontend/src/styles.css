@@ -43,7 +43,6 @@ button {
 
 .app-shell {
   min-height: 100vh;
-  padding-top: 56px;
   background:
     linear-gradient(rgba(15, 17, 18, 0.74), rgba(15, 17, 18, 0.98)),
     url("https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=2400&q=80")
@@ -51,12 +50,11 @@ button {
 }
 
 .top-nav {
-  position: fixed;
+  position: sticky;
   top: 0;
-  right: 0;
-  left: 0;
   z-index: 40;
   display: flex;
+  width: 100%;
   align-items: center;
   justify-content: space-between;
   min-height: 56px;

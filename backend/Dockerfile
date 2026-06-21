@@ -17,5 +17,7 @@ COPY backend/app ./app
 COPY backend/alembic.ini .
 COPY backend/migrations ./migrations
 COPY lan_agents/src ./lan_agents/src
+COPY scripts ./scripts
+COPY examples ./examples
 
-CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host ${BACKEND_HOST:-0.0.0.0} --port ${BACKEND_PORT:-8000}"]
+CMD ["sh", "-c", "alembic upgrade head && python scripts/seed_backend.py && uvicorn app.main:app --host ${BACKEND_HOST:-0.0.0.0} --port ${BACKEND_PORT:-8000}"]

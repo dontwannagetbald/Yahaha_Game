@@ -287,7 +287,7 @@ async def _assets_for_material_usage(
 def _runner_input_for_job(
     *,
     job: GenerationJob,
-    uploaded_assets: list[UploadedAsset],
+    uploaded_assets: list[UploadedAssetPayload],
 ) -> AgentRunInput:
     game_plan = job.game_plan or {}
     return AgentRunInput(
@@ -299,18 +299,47 @@ def _runner_input_for_job(
         user_requirements=job.user_requirements or {},
         game_plan=game_plan,
         material_usage=job.material_usage or {"assets": []},
-        uploaded_assets=[
+        uploaded_assets=uploaded_assets,
+    )
+
+
+def _materialize_uploaded_assets_for_runner(
+    *,
+    job: GenerationJob,
+    uploaded_assets: list[UploadedAsset],
+    storage: ObjectStorageService,
+) -> list[UploadedAssetPayload]:
+    local_root = Path("output") / "uploads" / str(job.user_id) / str(job.id)
+    payloads: list[UploadedAssetPayload] = []
+    for asset in uploaded_assets:
+        local_path = ""
+        try:
+            stored = storage.get_object(asset.object_key)
+        except (KeyError, StorageUnavailableError):
+            stored = None
+        if stored is not None:
+            body = stored[0] if isinstance(stored, tuple) else stored.body
+            local_root.mkdir(parents=True, exist_ok=True)
+            path = local_root / f"{asset.id}-{_safe_uploaded_asset_filename(asset)}"
+            path.write_bytes(body)
+            local_path = str(path)
+        payloads.append(
             UploadedAssetPayload(
                 asset_id=asset.id,
                 filename=asset.filename,
                 mime_type=asset.mime_type,
                 size_bytes=asset.size_bytes,
                 object_key=asset.object_key,
+                local_path=local_path,
                 purpose=asset.purpose,
             )
-            for asset in uploaded_assets
-        ],
         )
+    return payloads
+
+
+def _safe_uploaded_asset_filename(asset: UploadedAsset) -> str:
+    filename = Path(asset.filename).name.strip() or "asset"
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", filename).strip(".-") or "asset"
 
 
 async def _append_agent_log(
@@ -485,7 +514,12 @@ async def create_job(
     for asset in assets:
         asset.job_id = job.id
 
-    runner_input = _runner_input_for_job(job=job, uploaded_assets=assets)
+    runner_uploaded_assets = _materialize_uploaded_assets_for_runner(
+        job=job,
+        uploaded_assets=assets,
+        storage=storage,
+    )
+    runner_input = _runner_input_for_job(job=job, uploaded_assets=runner_uploaded_assets)
 
     session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
     await db.commit()
@@ -549,7 +583,15 @@ async def create_revision_job(
     db.add(revision_job)
     await db.flush()
 
-    runner_input = _runner_input_for_job(job=revision_job, uploaded_assets=assets)
+    runner_uploaded_assets = _materialize_uploaded_assets_for_runner(
+        job=revision_job,
+        uploaded_assets=assets,
+        storage=storage,
+    )
+    runner_input = _runner_input_for_job(
+        job=revision_job,
+        uploaded_assets=runner_uploaded_assets,
+    )
     session_factory = async_sessionmaker(db.bind, expire_on_commit=False)
     await db.commit()
     background_tasks.add_task(

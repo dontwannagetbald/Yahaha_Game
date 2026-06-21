@@ -12,6 +12,8 @@ const expectations = [
   [files.jobs, "validation_report: Record<string, unknown> | null;"],
   [files.errors, "details?: string;"],
   [files.app, "buildValidationReportDetails"],
+  [files.app, "buildGenerationFailureNextStep"],
+  [files.app, "模型服务调用失败"],
   [files.app, "validation_report"],
   [files.app, "<pre className=\"error-dialog-details\">"],
   [files.app, "任务生成失败"],

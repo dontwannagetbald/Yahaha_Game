@@ -17,6 +17,13 @@ const required = [
   "setIsLoggedIn(Boolean(response.user))",
   "setAuthBootstrapStatus(\"ready\")",
   "authBootstrapStatus === \"loading\"",
+  "AUTH_USER_CACHE_KEY",
+  "readCachedAuthUser",
+  "writeCachedAuthUser(response.user)",
+  "writeCachedAuthUser(user)",
+  "clearCachedAuthUser()",
+  "useState<AuthUser | null>(() => readCachedAuthUser())",
+  "useState(() => Boolean(readCachedAuthUser()))",
   "display_name",
   "avatar_url",
 ];

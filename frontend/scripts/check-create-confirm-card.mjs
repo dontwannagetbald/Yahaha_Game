@@ -18,7 +18,8 @@ const requiredCreatePageTokens = [
   "| \"regenerate\"",
   "| \"confirm\"",
   "const isCardLoading =",
-  "const card = assistant_response?.card ?? null;",
+  "const hasAnchoredCard = visibleMessages.some((message) => message.card);",
+  "const fallbackCard = !hasAnchoredCard ? assistant_response?.card ?? null : null;",
   "createSessionPendingEventType === \"chat\"",
   "createSessionPendingEventType === \"regenerate\"",
   "createSessionPendingEventType === \"confirm\"",
@@ -109,6 +110,10 @@ if (createPage.includes("标签：{card.tags.join(\" / \") || \"暂无标签\"}"
 
 if (/card\s*&&\s*createSession\?\.conversation_status === "ready_to_confirm"/.test(createPage)) {
   failures.push("Expected confirm card to remain visible after confirm instead of gating the whole card on ready_to_confirm.");
+}
+
+if (createPage.includes("const card = assistant_response?.card ?? null;")) {
+  failures.push("Expected confirm card to avoid global end-of-stream rendering that moves after revision messages.");
 }
 
 if (

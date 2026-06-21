@@ -54,8 +54,8 @@ class RegeneratePlanner:
             llm_result = self._provider.complete_json(
                 messages=_messages_from_state(state),
                 response_schema=REGENERATE_PLANNER_SCHEMA,
-                temperature=0.7,
-                max_tokens=900,
+                temperature=1.0,
+                max_completion_tokens=900,
             )
         except Exception as exc:
             reason = str(exc).strip()

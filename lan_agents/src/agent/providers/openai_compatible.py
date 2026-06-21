@@ -39,8 +39,8 @@ class OpenAICompatibleLLMProvider:
         *,
         messages: list[LLMMessage],
         response_schema: dict[str, Any],
-        temperature: float = 0.2,
-        max_tokens: int = 1200,
+        temperature: float = 1.0,
+        max_completion_tokens: int = 1200,
     ) -> dict[str, Any]:
         """Return a JSON object from `/chat/completions`."""
         payload = {
@@ -50,20 +50,16 @@ class OpenAICompatibleLLMProvider:
                 for message in messages
             ],
             "temperature": temperature,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_completion_tokens,
             "response_format": {"type": "json_object"},
         }
         endpoint = self._chat_completions_url(self._config.base_url)
         try:
-            raw = self._post_json(endpoint, payload, "LLM provider HTTP error")
-        except ProviderError as exc:
-            if not _requests_max_completion_tokens(str(exc)):
-                raise
-            retry_payload = dict(payload)
-            retry_payload["max_completion_tokens"] = retry_payload.pop("max_tokens")
-            raw = self._post_json(endpoint, retry_payload, "LLM provider HTTP error")
+            raw = self._post_json_with_compat(
+                endpoint, payload, "LLM provider HTTP error"
+            )
         except OSError as exc:
-            raise ProviderError("LLM provider request failed") from exc
+            raise ProviderError(_request_failure_message("LLM provider request failed", exc)) from exc
 
         result = parse_chat_completion_response(raw)
         if not isinstance(result, dict):
@@ -76,8 +72,8 @@ class OpenAICompatibleLLMProvider:
         messages: list[LLMMessage],
         response_schema: dict[str, Any],
         attachments: list[dict[str, Any]],
-        temperature: float = 0.2,
-        max_tokens: int = 1200,
+        temperature: float = 1.0,
+        max_completion_tokens: int = 1200,
     ) -> dict[str, Any]:
         """Return a JSON object using temporary file references via Responses API."""
         if not attachments:
@@ -85,7 +81,7 @@ class OpenAICompatibleLLMProvider:
                 messages=messages,
                 response_schema=response_schema,
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_completion_tokens=max_completion_tokens,
             )
         uploaded_file_ids: list[str] = []
         try:
@@ -95,31 +91,19 @@ class OpenAICompatibleLLMProvider:
                 "model": self._config.model,
                 "input": _responses_input_from_messages(messages, uploaded_file_ids),
                 "temperature": temperature,
-                "max_output_tokens": max_tokens,
+                "max_output_tokens": max_completion_tokens,
                 "text": {"format": {"type": "json_object"}},
             }
-            http_request = request.Request(
-                self._responses_url(self._config.base_url),
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {self._config.api_key}",
-                    "Content-Type": "application/json",
-                },
-                method="POST",
-            )
             try:
-                with request.urlopen(  # nosec B310 - endpoint is configured server-side.
-                    http_request, timeout=self._config.timeout_seconds
-                ) as response:
-                    raw = response.read().decode("utf-8")
-            except error.HTTPError as exc:
-                detail = exc.read(500).decode("utf-8", "replace").strip()
-                suffix = f": {_safe_preview(detail)}" if detail else ""
-                raise ProviderError(
-                    f"LLM provider Responses API HTTP error: {exc.code}{suffix}"
-                ) from exc
+                raw = self._post_json_with_compat(
+                    self._responses_url(self._config.base_url),
+                    payload,
+                    "LLM provider Responses API HTTP error",
+                )
             except OSError as exc:
-                raise ProviderError("LLM provider Responses API request failed") from exc
+                raise ProviderError(
+                    _request_failure_message("LLM provider Responses API request failed", exc)
+                ) from exc
             return parse_responses_api_response(raw)
         finally:
             for file_id in uploaded_file_ids:
@@ -144,6 +128,28 @@ class OpenAICompatibleLLMProvider:
             detail = exc.read(500).decode("utf-8", "replace").strip()
             suffix = f": {_safe_preview(detail)}" if detail else ""
             raise ProviderError(f"{error_prefix}: {exc.code}{suffix}") from exc
+
+    def _post_json_with_compat(
+        self, endpoint: str, payload: dict[str, Any], error_prefix: str
+    ) -> str:
+        retry_payload = dict(payload)
+        applied_fixes: set[str] = set()
+        for _attempt in range(3):
+            try:
+                return self._post_json(endpoint, retry_payload, error_prefix)
+            except ProviderError as exc:
+                message = str(exc)
+                if (
+                    "default_temperature" not in applied_fixes
+                    and "temperature" in retry_payload
+                    and _requests_default_temperature(message)
+                ):
+                    retry_payload = dict(retry_payload)
+                    retry_payload.pop("temperature", None)
+                    applied_fixes.add("default_temperature")
+                    continue
+                raise
+        raise ProviderError(f"{error_prefix}: exhausted compatibility retries")
 
     def _upload_reference_attachment(self, attachment: dict[str, Any]) -> str:
         local_path = str(attachment.get("local_path") or "").strip()
@@ -242,7 +248,11 @@ def parse_chat_completion_response(raw: str) -> dict[str, Any]:
     """Parse an OpenAI-compatible chat completion envelope into a JSON object."""
     try:
         data = json.loads(raw)
-        content = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        finish_reason = choice.get("finish_reason")
+        if finish_reason == "length":
+            raise ProviderError(_completion_budget_exhausted_message(data))
+        content = choice["message"]["content"]
     except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
         if os.getenv("LLM_DEBUG_INVALID_JSON_PREVIEW", "").lower() == "true":
             raise ProviderError(
@@ -402,10 +412,45 @@ def _safe_preview(content: str) -> str:
     return " ".join(content.strip().split())[:160]
 
 
-def _requests_max_completion_tokens(message: str) -> bool:
+def _request_failure_message(prefix: str, exc: OSError) -> str:
+    detail = _safe_preview(str(exc))
+    if detail:
+        return f"{prefix}: {exc.__class__.__name__}: {detail}"
+    return f"{prefix}: {exc.__class__.__name__}"
+
+
+def _completion_budget_exhausted_message(data: dict[str, Any]) -> str:
+    usage = data.get("usage")
+    completion_tokens = _usage_int(usage, "completion_tokens")
+    reasoning_tokens = ""
+    if isinstance(usage, dict):
+        details = usage.get("completion_tokens_details")
+        reasoning_tokens = _usage_int(details, "reasoning_tokens")
+    metrics = [
+        "finish_reason=length",
+        f"completion_tokens={completion_tokens}" if completion_tokens else "",
+        f"reasoning_tokens={reasoning_tokens}" if reasoning_tokens else "",
+    ]
+    suffix = ", ".join(metric for metric in metrics if metric)
+    return (
+        "LLM provider stopped because max_completion_tokens was exhausted "
+        f"({suffix}). Increase the Coding Agent max_completion_tokens or reduce output size."
+    )
+
+
+def _usage_int(value: Any, key: str) -> str:
+    if not isinstance(value, dict):
+        return ""
+    item = value.get(key)
+    if isinstance(item, int):
+        return str(item)
+    return ""
+
+
+def _requests_default_temperature(message: str) -> bool:
     normalized = message.lower()
     return (
-        "max_completion_tokens" in normalized
-        and "max_tokens" in normalized
-        and "unsupported parameter" in normalized
+        "temperature" in normalized
+        and "only the default" in normalized
+        and "supported" in normalized
     )

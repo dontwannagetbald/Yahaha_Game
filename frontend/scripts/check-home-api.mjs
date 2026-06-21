@@ -24,6 +24,7 @@ const requiredHomeTokens = [
   "onLikeGame",
   "isLoggedIn",
   "isLoading",
+  "isLoading && games.length === 0",
   "onRequireLogin",
   "useEffect(() => {",
   "void onLoadGames({",

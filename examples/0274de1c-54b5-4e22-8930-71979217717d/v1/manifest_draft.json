@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "title": "被误解的女巫：符文真相",
+  "description": "《被误解的女巫：符文真相》是一款哥特奇幻风格的解谜、冒险小游戏。玩家将控制被误解的女巫，解谜。目标是揭开真相，同时避免拼错符文触发反噬。操作方式为符文输入与机关互动。",
+  "entry": "index.html",
+  "styles": [
+    "style.css"
+  ],
+  "scripts": [
+    "game.js"
+  ],
+  "assets": [],
+  "cover": "assets/cover.png",
+  "controls": [
+    "鼠标点击/拖拽或键盘输入符文；与机关进行交互确认。"
+  ],
+  "runtime": "html5-iframe",
+  "generatedAt": "2026-06-21T18:10:18.469638Z"
+}

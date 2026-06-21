@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "1.0",
+  "title": "精灵小兽",
+  "description": "《精灵小兽》是一款可爱治愈风格的休闲小游戏。玩家将控制可爱小生物，休闲收集。目标是收集并解锁全部小生物图鉴，同时避免收集进度停滞或错过关键收集机会。操作方式为点击移动与收集。",
+  "entry": "index.html",
+  "styles": [
+    "style.css"
+  ],
+  "scripts": [
+    "game.js"
+  ],
+  "assets": [],
+  "cover": "assets/cover.png",
+  "controls": [
+    "点击地面移动；接触收集目标；无需复杂按键。"
+  ],
+  "runtime": "html5-iframe",
+  "generatedAt": "2026-06-21T13:11:59.349843Z"
+}

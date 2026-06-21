@@ -109,7 +109,7 @@ if (!packageJson.includes("\"test:create-session-state\"")) {
   failures.push("Expected package.json to expose test:create-session-state.");
 }
 
-if (app.includes("localStorage") && app.includes("create_session_id")) {
+if (/localStorage\.(?:getItem|setItem|removeItem)\([^)]*create_session_id/s.test(app)) {
   failures.push("Expected Step 6.2 not to rely on localStorage create_session_id restoration.");
 }
 

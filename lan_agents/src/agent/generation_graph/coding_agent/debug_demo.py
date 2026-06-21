@@ -87,7 +87,10 @@ def _write_bundle_seed(state: GenerationState, bundle_seed: dict) -> None:
 
 def _provider_for_demo(raw_fixture: dict):
     if os.environ.get("CODING_DEBUG_DEMO_USE_REAL_PROVIDER") == "1":
-        return provider_from_env()
+        return provider_from_env(
+            model_env_name="CODING_AGENT_MODEL",
+            fallback_model_env_name="OPENAI_COMPATIBLE_MODEL",
+        )
 
     repaired_manifest = deepcopy(raw_fixture["bundle_seed"]["manifest_draft"])
     repaired_manifest["assets"] = ["assets/background.png", "assets/player.png"]

@@ -2,6 +2,150 @@
 
 本文档记录已实现功能、对应实施计划 step，以及尚未落地或需要补齐的边界。项目 layer、目录边界和文件职责维护在 [architecture.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/architecture.md)。
 
+### 2026-06-22：修复 Home 切回时游戏列表闪成加载占位 ☑️ 已完成
+
+- 已定位截图中“切 tab 页面删闪”的首页根因：`HomePage` 在每次 `isLoading=true` 时都会用“正在加载游戏列表...”占位整体替换 `games.map(...)` 卡片列表；路由或浏览器 tab 切回触发 `onLoadGames()` 后，旧游戏卡片会瞬间消失并重新排版（Frontend Home Flash）。
+- 已调整首页列表渲染：只有 `isLoading && games.length === 0` 的首次空列表加载才显示加载占位；已有游戏列表时后台刷新继续保留旧卡片，避免内容被清空再重建（Frontend Home Flash）。
+- 已更新 `check-home-api.mjs`，锁定首页 loading 占位必须受 `games.length === 0` 保护，防止之后又退回纯 `isLoading` 覆盖列表（Frontend Home Flash）。
+- 已验证 `cd frontend && npm run test:home-api`、`npm run test:home-filters`、`npm run test:current-user`、`npm run test:routing-structure` 和 `npm run build` 均通过（Frontend Home Flash）。
+
+### 2026-06-22：修复 Create tab 切回时任务和会话被重载闪动 ☑️ 已完成
+
+- 已定位录屏中仍会闪的另一个根因：进入 `/create` 会重新执行 `handleLoadCreateTasks()`，旧逻辑每次拿到任务列表后都选中第一条可恢复任务并调用 `handleSelectCreateTask()`，导致当前会话进入 loading/恢复流程；任务列表也会在 loading 时被“任务历史加载中”占位替换，视觉上像页面内容被删掉又重建（Frontend Create Flash）。
+- 已调整任务列表刷新策略：将后端任务映射为 `nextTasks` 后先更新列表；如果当前 `selectedTaskId` 仍存在且已有 `selectedCreateSessionId`，就保留当前任务和会话，不再重选第一条任务、不再触发会话恢复 loading（Frontend Create Flash）。
+- 已调整 Create 页任务列表渲染：只有任务列表为空时才显示“任务历史加载中”；已有历史任务时后台刷新不替换原列表，避免左侧内容闪空（Frontend Create Flash）。
+- 已更新 `check-create-tasks.mjs` 和 `check-create-session-state.mjs`，锁定任务刷新保留当前选择、loading 不替换已有列表，并避免 auth 用户缓存被误判为 create session localStorage 恢复（Frontend Create Flash）。
+- 已验证 `cd frontend && npm run test:create-tasks`、`cd frontend && npm run test:create-session-state`、`cd frontend && npm run test:current-user`、`cd frontend && npm run test:routing-structure` 和 `cd frontend && npm run build` 均通过（Frontend Create Flash）。
+
+### 2026-06-22：修复切换 tab 时账号头像闪成登录按钮 ☑️ 已完成
+
+- 已定位“头像账号瞬间变成登录按钮”的根因：`App` 首帧默认 `isLoggedIn=false/currentUser=null`，需要等异步 `/api/auth/me` 返回后才恢复用户；浏览器 tab 恢复或页面轻量重挂载时，顶部导航会先渲染未登录态，再切回头像，形成明显闪动（Frontend Auth Flash）。
+- 已增加本地 auth 用户缓存：成功恢复 `/api/auth/me` 或登录注册后写入 `localStorage`，App 初始化时直接从缓存恢复 `currentUser/isLoggedIn`，让导航首帧保持已知用户态（Frontend Auth Flash）。
+- 已调整 auth 恢复失败策略：只有明确 401 才清缓存和切换未登录；普通网络/临时错误只记录日志，不再把当前用户态瞬间清空（Frontend Auth Flash）。
+- 已在退出登录时清理 auth 缓存，并更新 `check-current-user.mjs` 锁定缓存初始化、写入和清理契约（Frontend Auth Flash）。
+- 已验证 `cd frontend && npm run test:current-user` 和 `cd frontend && npm run build` 均通过（Frontend Auth Flash）。
+
+### 2026-06-22：修复生成后修改时游戏卡片被挪到新气泡后面 ☑️ 已完成
+
+- 已定位截图中卡片位置变化的根因：Create 页把带 `card` 的 assistant 历史消息从 `buildRenderableMessages()` 过滤掉，再使用 `assistant_response.card` 在整个消息流末尾全局渲染确认卡片；用户发起生成后修改时，新用户气泡和“好的，这就为您修改”被追加到 `messages`，卡片随后又在末尾渲染，表现为“旧卡片被删了又加到新气泡下面”（Frontend Revision Card Anchor）。
+- 已将卡片渲染改为锚定历史消息：`RenderableConversationMessage` 增加 `card` 字段，`getMessageCard()` 从消息 payload 中提取卡片，消息循环内原地渲染 `confirm-card`；只有老数据没有任何锚定卡片时，才使用 `assistant_response.card` 作为 fallback（Frontend Revision Card Anchor）。
+- 已更新 `check-create-chat-event.mjs` 和 `check-create-confirm-card.mjs`，锁定 card 消息不能被过滤、卡片必须在原消息位置渲染，防止 revision 气泡把原卡片挤到后面（Frontend Revision Card Anchor）。
+- 已验证 `cd frontend && npm run test:create-chat-event`、`cd frontend && npm run test:create-confirm-card`、`cd frontend && npm run test:create-redo-revision` 和 `cd frontend && npm run build` 均通过（Frontend Revision Card Anchor）。
+
+### 2026-06-22：修复顶部 tab 切换时页面整体下移闪动 ☑️ 已完成
+
+- 已定位 tab/路由切换闪动的布局根因：全局 `.top-nav` 使用 `position: fixed` 脱离文档流，同时 `.app-shell` 用 `padding-top: 56px` 人工补位；Create 页又按 `height: calc(100vh - 56px)` 计算高度，切换 tab 或浏览器恢复 repaint 时容易出现一帧补位和 viewport 重算叠加，表现为所有组件整体下移闪一下（Frontend Layout Debug）。
+- 已将顶部导航改为 `position: sticky; top: 0`，让导航保留在正常文档流中并继续吸顶；同时移除 `.app-shell` 的固定导航补位 padding，让 Home/Create 内容自然排在导航下方，避免 route tab 切换时先补位再重算（Frontend Layout Debug）。
+- 已在 `check-routing-structure.mjs` 增加静态回归检查，锁定 TopNav 必须 sticky、`.app-shell` 不得继续使用 `padding-top: 56px` 作为 fixed-nav 补偿（Frontend Layout Debug）。
+- 已验证 `cd frontend && npm run test:routing-structure`、`cd frontend && npm run test:create-layout` 和 `cd frontend && npm run build` 均通过（Frontend Layout Debug）。
+
+### 2026-06-22：识别 LLM length 截断并提高 Coding token 预算 ☑️ 已完成
+
+- 已定位 `code=0/msg=success` 但任务失败的根因：模型响应 `finish_reason=length`、`content=""`，且 `completion_tokens=5200 / reasoning_tokens=5200` 表明 5200 输出预算全部被 reasoning 消耗，正文还没生成就被截断（Backend Agent Debug）。
+- 已在 `OpenAICompatibleLLMProvider` 的 chat completion 解析层识别 `finish_reason=length`，直接抛出包含 `finish_reason=length / completion_tokens / reasoning_tokens` 的明确 `ProviderError`，不再把空正文洗成泛化的 `LLM provider returned invalid JSON`（Backend Agent Debug）。
+- 已将 Coding Agent 的 `max_completion_tokens` 从 5200 提升到 12000，并把 `max_completion_tokens was exhausted / finish_reason=length` 纳入可重试 provider 失败，避免一次截断直接让 generation job failed（Backend Agent Debug）。
+- 已新增回归测试覆盖 provider length 截断详细报错、Coding Agent 大输出预算和 length 截断后重试（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_llm_provider.py tests/unit_tests/test_coding_agent.py -q` 通过，结果为 `34 passed`；已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_generation_provider.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `12 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Backend Agent Debug）。
+
+### 2026-06-22：发送成功后隐藏已绑定芯片并保留附件气泡 ☑️ 已完成
+
+- 已定位截图中 `background.jpg 已绑定` 的根因：Create 页把 `createSession.material_usage.assets` 映射成 `boundFiles`，再与本地 `selectedFiles` 合并成输入区 `visibleFiles`，所以附件发送成功后会重新以“已绑定”芯片回显（Frontend Upload Send）。
+- 已调整 Create 页渲染策略：输入区只显示本地 `selectedFiles` 的 `待发送 / 上传中 / 上传失败` 状态；发送成功后的附件不再显示为输入区“已绑定”芯片，但仍作为会话素材保留给后端和 Agent 使用（Frontend Upload Send）。
+- 已恢复 `upload_assets` 会话事件的聊天流附件气泡展示：纯附件发送会显示一条用户附件气泡；图文一起发送时，附件挂到对应用户消息下方（Frontend Upload Send）。
+- 已更新 `check-create-upload-assets.mjs` 和 `check-create-chat-event.mjs`，锁定“已绑定芯片不回显、附件气泡进入聊天流、选择后待发送、发送时上传”的新契约（Frontend Upload Send）。
+- 已验证 `cd frontend && npm run test:create-upload-assets`、`cd frontend && npm run test:create-chat-event` 和 `cd frontend && npm run build` 均通过（Frontend Upload Send）。
+
+### 2026-06-22：修复附件选择后提前出现在聊天气泡 ☑️ 已完成
+
+- 已定位根因：`handleFileSelect` 选择文件后立即调用上传并发送 `upload_assets` 事件，聊天渲染层会把未被文字消息消费的附件事件显示为用户附件气泡，所以附件还没点击发送就已出现在气泡里（Frontend Upload Send）。
+- 已将附件选择改为仅进入 `pending` 待发送列表；点击发送按钮或按 Enter 时，才把待发送附件切到 `uploading` 并调用上传链路，上传成功后再继续发送文字消息（Frontend Upload Send）。
+- 已修复 `uploadSelectedFiles` 不返回上传结果的问题，避免实际上传成功后发送流程拿到 `undefined` 并误判失败；失败时会恢复输入文字并把附件显示为上传失败，可重新置为待发送（Frontend Upload Send）。
+- 已更新 `check-create-upload-assets.mjs` 和 `check-create-chat-event.mjs`，锁定“选择不上传、发送才上传、上传函数返回结果、附件可随 Enter/发送按钮提交”的前端契约（Frontend Upload Send）。
+- 已验证 `cd frontend && npm run test:create-upload-assets`、`cd frontend && npm run test:create-chat-event` 和 `cd frontend && npm run build` 均通过（Frontend Upload Send）。
+
+### 2026-06-22：修复 Create 右侧预览面板被遮挡 ☑️ 已完成
+
+- 已定位右侧被遮挡的根因：Create 外层网格和成功态生成面板缺少足够的 `width / max-width / min-width / box-sizing` 收缩约束，当前浏览器宽度下右侧面板会被撑到视口外；成功态发布按钮又贴在最右侧，更容易出现半个按钮被裁掉（Frontend Preview Layout）。
+- 已为 `create-layout` 增加 `width: 100%`、`max-width: 100vw` 和 `box-sizing: border-box`，并统一约束 `create-side-panel / workspace-stage / generate-panel` 可在网格内收缩，避免右侧舞台越过视口边界（Frontend Preview Layout）。
+- 已给成功态封面和 iframe 运行舞台增加右侧安全内缩，按 `calc(100% - safe inset)` 保持 16:9 居中显示，避免游戏右边部分贴边后被裁切或遮挡（Frontend Preview Layout）。
+- 已将成功态发布操作区固定为底部右对齐，并保留右下安全内边距，让“发布”按钮稳定出现在右下角（Frontend Preview Layout）。
+- 已更新 `check-create-layout.mjs`，增加右侧面板收缩、预览舞台安全内缩和发布按钮右下角的静态回归检查（Frontend Preview Layout）。
+- 已验证 `cd frontend && npm run test:create-layout` 和 `cd frontend && npm run build` 通过；浏览器插件因本地 `localhost:5174` 安全策略拒绝受控打开，未做自动截图验证（Frontend Preview Layout）。
+
+### 2026-06-22：修复上传附件未进入人物素材生成链路 ☑️ 已完成
+
+- 已核对前端上传链路：Create 页上传会依次执行 `presignUpload -> uploadFileBinary -> completeUpload`，随后发送 `upload_assets` 事件，并把返回 asset 合并进 `createSession.material_usage.assets`，前端本身能把附件传成功并绑定到会话素材（Backend Upload Assets）。
+- 已定位“上传了图片但人物素材没按附件生成”的根因：后端传给 Agent 的 `uploaded_assets` 只有 `object_key`，没有 Asset Agent 需要的本地可读 `local_path`；而 `run_asset_agent` 的上传图 refine 分支必须能读到本地图片文件才会用作 player/background 参考（Backend Upload Assets）。
+- 已在创建 generation job 和 revision job 前，从对象存储读取会话素材文件，落到 `output/uploads/{user_id}/{job_id}/...`，并把 `local_path` 一起传入 `AgentRunInput.uploaded_assets`，让 Asset Agent 可以真正读取用户上传图做人/背景素材（Backend Upload Assets）。
+- 已新增后端回归测试，断言 runner 收到的 `uploaded_assets[0].local_path` 是可读文件，且文件内容与对象存储中的上传对象一致，避免后续只传 key 不传本地文件路径的回归（Backend Upload Assets）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_agent_runner.py::test_runner_input_contains_session_snapshots_and_assets -q`、`cd frontend && npm run test:create-upload-assets`、`cd frontend && npm run test:create-chat-event` 和 `cd backend && ../.venv/bin/python -m pytest tests/test_uploads.py tests/test_create_sessions.py tests/test_jobs.py tests/test_agent_runner.py -q` 通过；已重新执行 `docker compose up -d --build backend` 让 backend 容器加载修复（Backend Upload Assets）。
+
+### 2026-06-22：调高真实 LLM 生成超时并接通兼容配置 ☑️ 已完成
+
+- 已定位 `TimeoutError: The read operation timed out` 的根因：backend 容器显式传入 `LLM_TIMEOUT_SECONDS=30`，而已有的 `OPENAI_COMPATIBLE_TIMEOUT_SECONDS=120` 没有被 `ProviderConfig.from_env()` 读取，真实 Coding Agent 生成完整 bundle 时容易 30 秒读超时（Backend Agent Debug）。
+- 已将 `ProviderConfig` 默认超时从 30 秒调高到 180 秒，并让 `LLM_TIMEOUT_SECONDS` 缺失时回落读取 `OPENAI_COMPATIBLE_TIMEOUT_SECONDS`，避免兼容配置写了但不生效（Backend Agent Debug）。
+- 已同步更新 `docker-compose.yml`、根目录 `.env.example` 和 `lan_agents/.env.example` 的 LLM timeout 默认值为 180 秒，保证本地容器和样例配置一致（Backend Agent Debug）。
+- 已新增 provider 回归测试，覆盖 `LLM_TIMEOUT_SECONDS` 优先读取以及 `OPENAI_COMPATIBLE_TIMEOUT_SECONDS` fallback 读取（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_llm_provider.py -q` 通过，结果为 `18 passed`；已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_agent.py tests/unit_tests/test_llm_provider.py tests/unit_tests/test_generation_provider.py tests/unit_tests/test_design_planner.py tests/unit_tests/test_generation_orchestrator.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `82 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Backend Agent Debug）。
+- 已重新执行 `docker compose up -d --build backend`，并在 backend 容器内确认 `ProviderConfig.from_env(...).timeout_seconds` 为 `180.0`；同时扫描 `/app/lan_agents/src`，确认没有 `max_tokens` 和 `temperature=0/0.x` 残留（Backend Agent Debug）。
+
+### 2026-06-22：统一 LLM temperature 为模型默认值 1.0 ☑️ 已完成
+
+- 已将 `lan_agents/src` 内所有主动传给 LLM provider 的 temperature 统一改为 `1.0`，覆盖 Design、Regenerate、Orchestrator、Coding draft、Coding debug repair、Revision 和 provider smoke（Backend Agent Debug）。
+- 已将 `LLMProvider` 协议、`MockLLMProvider` 和 `OpenAICompatibleLLMProvider` 的默认 temperature 从 `0.2` 改为 `1.0`，避免未显式传参时仍使用非默认值（Backend Agent Debug）。
+- 已将 `LLMProvider` 协议、mock provider、OpenAI-compatible provider 和所有调用点从旧参数名 `max_tokens` 统一改为 `max_completion_tokens`；Responses API 仍按协议使用 `max_output_tokens`，但 chat completions 请求不再发送 `max_tokens`（Backend Agent Debug）。
+- 已更新相关测试断言，不再期待 `temperature=0.0`；保留 provider 参数兼容兜底，但正常请求不会再发送 `temperature: 0`（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_agent.py tests/unit_tests/test_llm_provider.py tests/unit_tests/test_generation_provider.py tests/unit_tests/test_design_planner.py tests/unit_tests/test_generation_orchestrator.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `80 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Backend Agent Debug）。
+- 已重新执行 `docker compose up -d --build backend`，并在 backend 容器内扫描 `/app/lan_agents/src`，确认没有 `temperature=0/0.0/0.2/0.3/0.7` 和 `max_tokens` 残留，运行中的 provider 只发送 `max_completion_tokens`（Backend Agent Debug）。
+
+### 2026-06-22：补齐 Coding Agent provider 请求失败重试与错误详情 ☑️ 已完成
+
+- 已定位 `coding_agent failed: LLM provider request failed` 没有重调模型的根因：`draft_code` 只重试 invalid JSON 和本地安全校验失败，不会重试 provider 请求异常；`OpenAICompatibleLLMProvider` 又把 `OSError/TimeoutError` 泛化成无细节的 `LLM provider request failed`（Backend Agent Debug）。
+- 已在 `draft_code` 的 provider 调用层将 `request failed / timeout / 429 / 5xx / invalid JSON` 归为可重试瞬时失败，最多重新调用一次 Coding 模型，避免一次网络抖动直接让任务失败（Backend Agent Debug）。
+- 已在 `OpenAICompatibleLLMProvider` 的 chat completions 与 Responses API 请求失败分支保留安全摘要，例如 `LLM provider request failed: TimeoutError: timed out`，让 Agent 日志和任务失败原因不再只有泛化文案（Backend Agent Debug）。
+- 已新增回归测试覆盖 provider request failed 后第二次调用成功，以及 OSError 细节透传；已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_agent.py::test_draft_code_retries_once_when_provider_request_fails tests/unit_tests/test_llm_provider.py::test_openai_provider_includes_os_error_detail -q` 通过，结果为 `2 passed`（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_agent.py tests/unit_tests/test_llm_provider.py tests/unit_tests/test_generation_provider.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `42 passed`（Backend Agent Debug）。
+
+### 2026-06-22：生成失败弹窗支持重新生成 ☑️ 已完成
+
+- 已将 Create 任务失败弹窗从单纯“知道了”关闭改为可重试入口：只有 generation job failed 弹窗会显示“重新生成”，普通错误弹窗仍保持“知道了”（Frontend Step 6.13）。
+- 已在 `frontend/src/App.tsx` 增加失败任务重试状态和 `handleRetryFailedGenerationTask`，点击后用失败任务原 `session_id` 恢复 confirmed Create 会话，并复用现有 `createGenerationJobFromSession -> POST /api/jobs` 创建新的 generation job，旧 failed 任务保留在历史列表中（Frontend Step 6.13）。
+- 已新增 `frontend/scripts/check-create-failed-retry.mjs` 与 `npm run test:create-failed-retry`，锁定失败弹窗文案、原会话复用和重调 generation job 后端的前端契约（Frontend Step 6.13）。
+- 已验证 `cd frontend && npm run test:create-failed-retry`、`npm run test:create-confirm-card`、`npm run test:create-chat-event`、`npm run test:create-layout` 和 `npm run build` 均通过（Frontend Step 6.13）。
+- 已补充生成失败弹窗的错误类型提示：仅存在 `validation_report` 时提示用户按报告调整素材；`LLM provider / temperature / timeout / HTTP error / model` 这类模型服务失败会提示稍后重试或检查模型服务配置，不再误导为素材问题（Frontend Step 6.13）。
+- 已验证 `cd frontend && node scripts/check-validation-report-error.mjs`、`npm run test:create-failed-retry` 和 `npm run build` 均通过（Frontend Step 6.13）。
+
+### 2026-06-22：兼容 gpt-5.5 默认 temperature 限制 ☑️ 已完成
+
+- 已定位 `LLM provider HTTP error: 400 Unsupported value: 'temperature' does not support 0` 的根因：Coding Agent 使用 `temperature=0.0` 调用 chat completions，但 `gpt-5.5` 只接受默认 `temperature=1`，provider 之前没有做参数方言重试（Backend Agent Debug）。
+- 已在 `OpenAICompatibleLLMProvider` 增加统一模型参数兼容重试：遇到默认 temperature 限制时移除 `temperature` 后重试；原有 `max_tokens -> max_completion_tokens` 兼容保留，并统一走同一重试入口（Backend Agent Debug）。
+- 已让带附件的 Responses API 调用也复用同一兼容重试入口，避免 Orchestrator 后续遇到同类 temperature 默认值限制时直接失败（Backend Agent Debug）。
+- 已新增 provider 回归测试，覆盖第一次请求带 `temperature=0.0` 被拒绝后，第二次请求去掉 `temperature` 并成功解析 JSON（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_llm_provider.py::test_openai_provider_retries_chat_completion_without_temperature_when_model_requires_default -q` 通过，结果为 `1 passed`（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_llm_provider.py tests/unit_tests/test_generation_provider.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `27 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Backend Agent Debug）。
+
+### 2026-06-22：修复 Design Agent 一轮追问后误出卡 ☑️ 已完成
+
+- 已定位“一轮就返回游戏卡片”的根因：LLM 返回自相矛盾结果，一边在 `assistant_message` 里继续追问，一边把 `game_plan_patch` 的必填字段全部补满；本地逻辑只看字段是否齐全，于是把状态切成 `ready_to_confirm` 并由 `build_user_response` 生成卡片（Agent Step 1.42）。
+- 已收紧 Design Agent prompt：当 `assistant_message` 非空时，表示仍在收集需求，模型不得猜填所有缺失字段，尤其不得填写正在追问的字段；只有无需继续追问、准备出确认卡时，`assistant_message` 才能为空且 `suggestions` 为空数组（Agent Step 1.42）。
+- 已调整 `DesignPlanner` 状态判断：非强制补全场景下，只要模型返回了追问，就保持 `conversation_status=collecting`，即使 `game_plan_patch` 暂时把字段补满，也不会直接出卡（Agent Step 1.42）。
+- 已调整 `build_user_response`：当状态仍是 `collecting` 且存在 assistant 追问或 suggestions 时，优先返回追问气泡，不因 `game_plan` 字段完整而生成卡片；上传事件仍优先清空旧 assistant 文案，避免旧消息复现（Agent Step 1.42）。
+- 已保留显式完整输入路径：如果用户自己在消息里明确给全标题、玩法、风格、角色、胜负条件和操作方式，deterministic plan 可以直接出卡，不会被默认 mock 追问拖回 collecting（Agent Step 1.42）。
+- 已新增回归测试，覆盖“哈利波特追逐伏地魔大战”这类 LLM overfill + follow-up 的原始问题、prompt 约束、collecting 响应不出卡，以及上传事件不复用旧消息（Agent Step 1.42）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_design_planner.py tests/unit_tests/test_plan_generation.py tests/unit_tests/test_responses.py tests/unit_tests/test_nodes.py tests/integration_tests/test_conversation_flows.py tests/integration_tests/test_graph.py -q` 通过，结果为 `61 passed`（Agent Step 1.42）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests tests/integration_tests -q` 通过，结果为 `187 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Agent Step 1.42）。
+
+### 2026-06-21：Coding Agent 有界返修闭环 ☑️ 已完成
+
+- 已让 `coding_agent.draft_code` 在本地安全检查失败时，不再直接结束生成；系统会把具体错误原因作为 `previous_attempt_error` 反馈给 LLM，并让 Coding Agent 重新生成完整 bundle 一次（Backend Agent Repair）。
+- 已让 `coding_agent.repair_code` 接收 `validation_report`，当本地 runtime / asset 检查未发现问题但 Validator 最终验收失败时，仍会把验收报告和当前文件反馈给 LLM 修复一次（Backend Agent Repair）。
+- 已在 `generation_graph` 增加 `coding_repair_attempt_count` 闸门：Validator 失败后最多回到 Coding repair 一次；第二次验收仍失败才进入 `finalize_failure`，避免无限循环（Backend Agent Repair）。
+- 已保持分工边界：问题发现由本地确定性检查与 Validator 完成，代码理解和修改由 Coding Agent 调 LLM 完成，最终放行仍只由 Validator 决定（Backend Agent Repair）。
+- 已新增回归测试，覆盖 draft 安全失败后带错误反馈重试、Validator 失败后回到 Coding repair 一次，以及 state 字段契约更新（Backend Agent Repair）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_agent.py::test_draft_code_retries_once_with_safety_feedback tests/integration_tests/test_generation_graph.py::test_generation_graph_repairs_once_after_validator_rejects_bundle -q` 通过，结果为 `2 passed`（Backend Agent Repair）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_agent.py tests/unit_tests/test_coding_debug.py tests/unit_tests/test_validator_agent.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `32 passed`（Backend Agent Repair）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests tests/integration_tests -q` 通过，结果为 `184 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Backend Agent Repair）。
+
 ### 2026-06-21：Create 生成后改为聊天触发修改 ☑️ 已完成
 
 - 已调整确认卡片展示逻辑：用户确认游戏卡片后，卡片继续留在聊天区作为原始方案记录，但 `确认 / 重新生成` 按钮只在 `ready_to_confirm` 阶段显示，进入 confirmed 或生成中后会隐藏（Frontend Step 6.12）。
@@ -16,9 +160,10 @@
 - 已把 `Create` 成功态右侧预览改为“封面先行，点击开始游玩后再挂载 iframe”；前端按 `job_id` 记忆本页已开始的任务，切到别的任务再切回同一任务时会继续直接显示游戏，不会每次都重置到封面（Frontend Step 6.11）。
 - 已在 `backend/app/jobs.py` 的任务序列化补齐 `cover_url`，并在 `frontend/src/App.tsx` / `frontend/src/mock/runtime.ts` 映射到 `CreateTaskItem`，让成功态封面优先使用真实游戏封面，拿不到时再回退默认封面（Frontend Step 6.11）。
 - 已重构 `frontend/src/pages/CreatePage.tsx` 与 `frontend/src/pages/create.css` 的成功态沙盒结构，新增封面舞台、开始按钮和独立运行内框；运行 iframe 改为挂在带安全内边距的 `preview-runtime-shell` 内，减少游戏最右侧贴边被裁掉的情况（Frontend Step 6.11）。
+- 已将成功态封面从纯 `background-image` 改为真实可见的图片层，弱化暗色遮罩，并在封面 URL 加载失败时回退默认封面；同时移除“先看封面，点击后再正式进入游戏。”提示文案，让右侧先展示封面和开始按钮（Frontend Step 6.11）。
 - 已保留沙盒下方可点击 `Bundle URL`，确保你之前要求的独立打开 draft bundle 入口仍可用（Frontend Step 6.11）。
-- 已更新 `backend/tests/test_jobs.py` 与 `frontend/scripts/check-create-layout.mjs`，分别锁定 `job cover_url` 返回和“封面入口后再挂载 iframe”的 Create 成功态结构（Frontend Step 6.11）。
-- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_jobs.py -q`、`cd frontend && npm run test:create-layout`、`cd frontend && npm run build` 通过（Frontend Step 6.11）。
+- 已更新 `backend/tests/test_jobs.py` 与 `frontend/scripts/check-create-layout.mjs`，分别锁定 `job cover_url` 返回、“封面入口后再挂载 iframe”、封面图片层和提示文案移除的 Create 成功态结构（Frontend Step 6.11）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_jobs.py -q`、`cd frontend && npm run test:create-layout`、`cd frontend && npm run build` 通过；本次封面可见性修复已重新验证 `cd frontend && npm run test:create-layout` 与 `cd frontend && npm run build` 通过（Frontend Step 6.11）。
 
 ### 2026-06-21：Home 页游戏标签中文化补齐 ☑️ 已完成
 
@@ -297,7 +442,7 @@
 - Backend Agent 空白会话修正：Create 自动创建空会话时不再触发 `invalid` 路由，后端会写入可恢复的 assistant 欢迎消息并等待用户首条消息（Backend Agent Step 1）。
 - 任务接口：已改造 `POST /api/jobs`，只从 confirmed `create_session` 创建初始生成任务，保存会话快照并返回 `session_id`（Step 8.1-Step 8.8、Step 8.15-Step 8.16）。
 - 执行器边界：已实现 fake runner、会话快照输入、后台状态迁移、Agent 日志落库和 draft game 创建，后端创建任务后可自动推进到 `succeeded / failed`（Step 8.9-Step 8.14）。
-- Seed 游戏数据：已提供可重复执行的 published 可玩游戏写入，包含真实数据库记录、`published/*` 静态 bundle、public manifest/entry 地址，便于首页和游戏卡片联调（Step 10）。
+- Seed 游戏数据：已提供可重复执行的 published 可玩游戏写入，当前直接读取根目录 `examples/` 的 3 套真实 bundle，并在 backend 容器启动时自动写入数据库与 `published/*`，便于评委首次打开首页直接看到示例游戏（Step 10）。
 - 独立 Agent 原型：已新增根目录 `agent/`，可在不接前后端的情况下本地运行 `conversation -> generation -> manifest` 全链路，并产出静态 bundle、校验结果和 provider 配置边界（Agent Prototype Step 1）。
 - LangGraph 部署配置：已新增 `agent/langgraph.json`、`agent/my_agent/agent.py` 和 `agent/my_agent/requirements.txt`，可导出真实 `CompiledStateGraph` 并按 LangGraph 平台约定声明依赖与环境变量入口（Agent Prototype Step 1）。
 - LangSmith tracing：已在独立 `agent/` 原型中接入 `LANGSMITH_TRACING / LANGSMITH_API_KEY / LANGSMITH_PROJECT / LANGSMITH_ENDPOINT` 配置、graph run metadata 和 runner tracing context（Agent Prototype Step 1）。
@@ -941,13 +1086,15 @@
 
 ### Step 10：准备 Seed 游戏数据 ☑️ 已完成
 
-- 已新增 `backend/app/seed.py`，提供固定 seed 作者、固定 game id 的 published 可玩游戏定义，以及 `manifest.json`、`index.html`、`style.css`、`game.js`、`assets/cover.svg` bundle 组装逻辑。
-- 已将 seed bundle 升级为两个真实可玩的 canvas 小游戏：`Sky Runner` 横版跑酷收集玩法，`Pixel Raid` 俯视角生存战斗玩法。
-- 已新增 `scripts/seed_backend.py`，可在本地或容器环境直接执行 seed，把示例游戏写入真实数据库和对象存储。
-- 已让 seed 过程把 bundle 上传到 `published/{game_id}/v1/*`，并把 `cover_url`、`manifest_url`、`artifact_base_url` 回填为 public-read URL。
-- 已保证 seed 幂等：重复执行会复用固定作者和固定游戏记录，不会重复创建同一批 mock 游戏。
+- 已将 `backend/app/seed.py` 改为直接读取根目录 `examples/` 下的 3 套真实 bundle，并用固定 game id 写入 `被误解的女巫：符文真相`、`精灵小兽`、`哈利的魔法追击` 这 3 个 published 示例游戏。
+- 已让 seed 过程按 manifest 原样上传 `manifest.json`、`index.html`、`style.css`、`game.js` 和 `assets/cover.png`，并把 `cover_url`、`manifest_url`、`artifact_base_url` 回填为 public-read URL。
+- 已将 seed 作者固定为 `zihanqiu21`，同步保留首页所需的标签、点赞数、游玩数和发布时间，用于复现评审时看到的游戏卡片信息。
+- 已新增 `scripts/seed_backend.py` 的容器兼容导入逻辑，可在本地仓库和 backend 镜像内复用同一份 seed 脚本。
+- 已更新 `backend/Dockerfile`，在容器启动时先执行迁移和 `python scripts/seed_backend.py`，保证 `docker compose up --build` 后首页默认可见这 3 个游戏。
+- 已保证 seed 幂等：重复执行会复用固定作者和固定游戏记录，不会重复创建同一批 published 示例游戏。
 - 已新增 `backend/tests/test_seed.py`，覆盖 published 游戏写入、幂等行为、manifest 契约和静态 bundle 结构。
-- 已验证 `cd backend && ../.venv/bin/pytest tests/test_seed.py -q`、`cd backend && ../.venv/bin/pytest tests -q`、带本机 PostgreSQL/MinIO 覆盖变量执行 `scripts/seed_backend.py`、数据库 published 记录检查，以及 MinIO public manifest / entry 读取。
+- 已新增 `backend/tests/test_config.py` 断言 backend 镜像会复制 `examples/`、复制 `scripts/` 并在启动前执行 seed。
+- 已验证 `cd backend && ../.venv/bin/pytest tests/test_seed.py -q` 与 `cd backend && ../.venv/bin/pytest tests/test_config.py -q` 通过。
 
 ### Agent Prototype Step 1：完成独立 Agent 原型 ☑️ 已完成
 
@@ -1350,3 +1497,20 @@
 - 已将 `normalize_tags` 调整为纯过滤器：空标签保持为空，不再本地默认补 `casual`；标签缺失会继续作为待补字段交给 LLM 处理（Agent Step 1.41）。
 - 已更新回归测试，覆盖 LLM 首轮可完整出卡、超过五轮仍需 LLM 自行补全、本地不再补建议/补标签/猜需求、模型追问建议保持透传（Agent Step 1.41）。
 - 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests tests/integration_tests -q` 通过，结果为 `178 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Agent Step 1.41）。
+
+### 2026-06-21：修复 Coding Agent 绝对路径误判 ☑️ 已完成
+
+- 已定位 `Coding Agent used absolute local path in game_js` 的误报根因：旧正则把 UI 文案中的 `'/6'` 当成了绝对路径，实际模型返回中没有 `/Users/...`、`/app/...` 或 `file://` 这类本地路径（Backend Agent Debug）。
+- 已收紧 `ABSOLUTE_PATH_PATTERN`，仅匹配形如 `'/segment/file'`、`url(/segment/file)` 或 Windows 盘符路径的路径式引用，避免把进度文本 `0/6` 误判为本地路径，同时继续拦截真实绝对路径（Backend Agent Debug）。
+- 已新增 `test_draft_code_allows_ui_text_fraction_that_starts_with_slash` 与 `test_draft_code_rejects_absolute_local_path` 回归测试，分别覆盖误报修复和安全拦截保持（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_coding_agent.py tests/unit_tests/test_coding_debug.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `22 passed`（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests tests/integration_tests -q` 通过，结果为 `180 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Backend Agent Debug）。
+
+### 2026-06-21：统一 Coding Agent 使用 gpt-5.5 ☑️ 已完成
+
+- 已新增 `CODING_AGENT_MODEL` 配置，并在根目录 `.env`、`.env.example`、`lan_agents/.env.example` 和 `docker-compose.yml` 中统一设置/默认 `gpt-5.5`，保留 `OPENAI_COMPATIBLE_MODEL` 给 Design/Orchestrator/Revision 等通用文本模型（Backend Agent Debug）。
+- 已扩展 `ProviderConfig.from_env()` 与 `provider_from_env()`，支持按调用方指定模型环境变量，并允许 fallback 到 `OPENAI_COMPATIBLE_MODEL`（Backend Agent Debug）。
+- 已让 `generation_graph` 的 Coding draft 和 coding repair/debug 路径都使用 `CODING_AGENT_MODEL`；直接调用 `draft_code()` 或 debug demo 的真实 provider 也会使用同一 coding 模型配置（Backend Agent Debug）。
+- 已新增/更新 provider 与 generation graph 测试，锁定 Coding Agent provider 实际读取 `CODING_AGENT_MODEL=gpt-5.5`（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_llm_provider.py tests/unit_tests/test_generation_provider.py tests/unit_tests/test_coding_agent.py tests/unit_tests/test_coding_debug.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `43 passed`（Backend Agent Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests tests/integration_tests -q` 通过，结果为 `182 passed`；已验证 `cd lan_agents && .venv/bin/langgraph validate` 通过，结果为 `3 graphs found`（Backend Agent Debug）。

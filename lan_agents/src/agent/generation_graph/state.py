@@ -30,6 +30,7 @@ class GenerationState:
     integrated_bundle_context: dict[str, Any] = field(default_factory=dict)
     debug_report: dict[str, Any] = field(default_factory=dict)
     validation_report: dict[str, Any] = field(default_factory=dict)
+    coding_repair_attempt_count: int = 0
     artifact_result: dict[str, Any] = field(default_factory=dict)
     draft_game_meta: dict[str, Any] = field(default_factory=dict)
     status: str = ""

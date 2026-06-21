@@ -11,9 +11,11 @@ const controlsSectionIndex = play.indexOf('<section className="play-controls-sec
 const tagRowIndex = play.indexOf('<div className="tag-row">');
 
 const requiredPlayTokens = [
-  "const relatedGames = games.filter(",
-  "candidate.tag === game.tag",
+  "const activeGameTags = new Set(game.tags)",
+  "const relatedGames = games.filter((candidate) =>",
+  "candidate.tags.some((tag) => activeGameTags.has(tag))",
   "candidate.id !== game.id",
+  "game.tags.map((tag) => (",
   "game.likedByMe",
   'const [loadProgress, setLoadProgress] = useState(0)',
   'const [playState, setPlayState] = useState<',
@@ -29,6 +31,12 @@ const requiredPlayTokens = [
   "more-games-section",
   "more-games-grid",
   "more-game-card",
+  "more-game-cover-overlay",
+  "more-game-tags",
+  "relatedGame.tags.map((tag) => (",
+  "more-game-stats",
+  "more-game-info",
+  "relatedGame.likeCount",
   "onOpenGame(relatedGame)",
 ];
 
@@ -63,6 +71,11 @@ const requiredCssTokens = [
   ".play-page .more-games-section",
   ".play-page .more-games-grid",
   ".play-page .more-game-card",
+  ".play-page .more-game-cover-overlay",
+  ".play-page .more-game-tags",
+  ".play-page .more-game-stats",
+  ".play-page .more-game-info",
+  "aspect-ratio: 16 / 10",
   ".play-page .loading-overlay",
   ".play-page .loading-cover",
   ".play-page .loading-progress-track",
@@ -78,6 +91,18 @@ for (const token of requiredPlayTokens) {
   if (!play.includes(token)) {
     failures.push(`Expected PlayPage.tsx to include: ${token}`);
   }
+}
+
+if (play.includes("candidate.tag === game.tag")) {
+  failures.push("Expected related games to match by any shared tag, not only the primary tag.");
+}
+
+if (play.includes("<span className=\"tag\">{game.tag}</span>")) {
+  failures.push("Expected Play page to render every game tag, not only the primary tag.");
+}
+
+if (play.includes("className=\"more-game-copy\"")) {
+  failures.push("Expected related game cards to use the same cover-card layout as Home, not the old compact copy layout.");
 }
 
 for (const token of requiredAppTokens) {

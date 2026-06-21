@@ -18,6 +18,7 @@ const expectedFiles = [
 const app = readFileSync(resolve(root, "src/App.tsx"), "utf8");
 const main = readFileSync(resolve(root, "src/main.tsx"), "utf8");
 const pkg = readFileSync(resolve(root, "package.json"), "utf8");
+const stylesCss = readFileSync(resolve(root, "src/styles.css"), "utf8");
 const playCss = readFileSync(resolve(root, "src/pages/play.css"), "utf8");
 
 const failures = [];
@@ -66,6 +67,14 @@ if (app.includes("function PlayPage(")) {
 
 if (app.includes("function AuthModal(")) {
   failures.push("AuthModal should be extracted from App.tsx");
+}
+
+if (!/\.top-nav\s*\{[^}]*position:\s*sticky;[^}]*top:\s*0;[^}]*\}/s.test(stylesCss)) {
+  failures.push("Expected top nav to stay in normal layout flow with sticky positioning to avoid route tab layout jumps.");
+}
+
+if (/\.app-shell\s*\{[^}]*padding-top:\s*56px;[^}]*\}/s.test(stylesCss)) {
+  failures.push("Expected app-shell to avoid fixed-nav padding compensation that causes tab-switch layout jumps.");
 }
 
 const playCssExpectations = [

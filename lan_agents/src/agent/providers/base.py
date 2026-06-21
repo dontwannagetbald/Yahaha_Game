@@ -47,22 +47,34 @@ class ProviderConfig:
     api_key: str = ""
     base_url: str = ""
     model: str = ""
-    timeout_seconds: float = 30.0
+    timeout_seconds: float = 180.0
 
     @classmethod
-    def from_env(cls) -> "ProviderConfig":
+    def from_env(
+        cls,
+        *,
+        model_env_name: str = "OPENAI_COMPATIBLE_MODEL",
+        fallback_model_env_name: str | None = None,
+    ) -> "ProviderConfig":
         """Build provider configuration from environment variables."""
         dotenv_values = _load_nearest_dotenv()
-        timeout = os.getenv("LLM_TIMEOUT_SECONDS", "30")
+        timeout = _env_value(
+            "LLM_TIMEOUT_SECONDS",
+            dotenv_values,
+            _env_value("OPENAI_COMPATIBLE_TIMEOUT_SECONDS", dotenv_values, "180"),
+        )
         try:
             timeout_seconds = float(timeout)
         except ValueError:
-            timeout_seconds = 30.0
+            timeout_seconds = 180.0
+        model = _env_value(model_env_name, dotenv_values, "")
+        if not model and fallback_model_env_name:
+            model = _env_value(fallback_model_env_name, dotenv_values, "")
         return cls(
             provider=_env_value("LLM_PROVIDER", dotenv_values, "mock") or "mock",
             api_key=_env_value("OPENAI_COMPATIBLE_API_KEY", dotenv_values, ""),
             base_url=_env_value("OPENAI_COMPATIBLE_BASE_URL", dotenv_values, ""),
-            model=_env_value("OPENAI_COMPATIBLE_MODEL", dotenv_values, ""),
+            model=model,
             timeout_seconds=timeout_seconds,
         )
 
@@ -75,8 +87,8 @@ class LLMProvider(Protocol):
         *,
         messages: list[LLMMessage],
         response_schema: dict[str, Any],
-        temperature: float = 0.2,
-        max_tokens: int = 1200,
+        temperature: float = 1.0,
+        max_completion_tokens: int = 1200,
     ) -> dict[str, Any]:
         """Return a JSON object for the requested task."""
 
@@ -86,15 +98,24 @@ class LLMProvider(Protocol):
         messages: list[LLMMessage],
         response_schema: dict[str, Any],
         attachments: list[dict[str, Any]],
-        temperature: float = 0.2,
-        max_tokens: int = 1200,
+        temperature: float = 1.0,
+        max_completion_tokens: int = 1200,
     ) -> dict[str, Any]:
         """Return a JSON object while passing temporary reference attachments."""
 
 
-def provider_from_env() -> LLMProvider:
+def provider_from_env(
+    *,
+    model_env_name: str = "OPENAI_COMPATIBLE_MODEL",
+    fallback_model_env_name: str | None = None,
+) -> LLMProvider:
     """Create the configured provider from process environment."""
-    return provider_from_config(ProviderConfig.from_env())
+    return provider_from_config(
+        ProviderConfig.from_env(
+            model_env_name=model_env_name,
+            fallback_model_env_name=fallback_model_env_name,
+        )
+    )
 
 
 def provider_from_config(config: ProviderConfig) -> LLMProvider:

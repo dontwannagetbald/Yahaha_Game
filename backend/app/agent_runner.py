@@ -22,6 +22,7 @@ class UploadedAssetPayload:
     mime_type: str
     size_bytes: int
     object_key: str
+    local_path: str = ""
     purpose: Optional[str] = None
 
 
@@ -256,6 +257,7 @@ def _asset_to_graph_dict(asset: UploadedAssetPayload) -> dict[str, Any]:
         "mime_type": asset.mime_type,
         "size_bytes": asset.size_bytes,
         "object_key": asset.object_key,
+        "local_path": asset.local_path,
         "purpose": asset.purpose,
     }
 

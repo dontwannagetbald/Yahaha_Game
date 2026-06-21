@@ -51,6 +51,39 @@ def test_complete_generated_plan_response_card_uses_only_card_fields() -> None:
     assert response["suggestions"] == []
 
 
+def test_collecting_response_with_complete_plan_keeps_followup_instead_of_card() -> None:
+    state = ConversationState(
+        conversation_status="collecting",
+        game_plan={
+            "plan_id": "plan-potter",
+            "title": "追逐伏地魔",
+            "introduction": "追逐伏地魔并用魔法战斗。",
+            "tags": ["action", "adventure"],
+            "gameplay": "玩家扮演哈利追踪伏地魔。",
+            "core_loop": ["追踪", "施法", "推进"],
+            "style": "魔法奇幻",
+            "characters": ["哈利", "伏地魔"],
+            "win_condition": "击败伏地魔",
+            "lose_condition": "生命值耗尽",
+            "controls": "方向键移动，按键施法",
+            "suggestions": ["动作追逐战", "冒险解谜追踪战"],
+            "confidence": "medium",
+        },
+        assistant_response={
+            **ConversationState().assistant_response,
+            "message": "你希望它更像动作追逐战，还是冒险解谜追踪战？",
+            "suggestions": ["动作追逐战", "冒险解谜追踪战"],
+        },
+    )
+
+    response = build_user_response(state)["assistant_response"]
+
+    assert response["card"] is None
+    assert response["actions"] == []
+    assert response["suggestions"] == ["动作追逐战", "冒险解谜追踪战"]
+    assert "动作追逐战" in response["message"]
+
+
 def test_complete_plan_without_introduction_generates_summary_card() -> None:
     state = ConversationState(
         user_requirements={

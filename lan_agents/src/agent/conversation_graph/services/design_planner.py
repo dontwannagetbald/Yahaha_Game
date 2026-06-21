@@ -86,7 +86,6 @@ class DesignPlanner:
         fallback = deterministic_plan_update(state)
         if (
             fallback.get("conversation_status") == "ready_to_confirm"
-            and not str(state.user_event.get("message") or "").strip()
         ):
             return fallback
         force_complete = should_force_complete_plan(state)
@@ -97,8 +96,8 @@ class DesignPlanner:
                     current_game_plan=fallback["game_plan"],
                 ),
                 response_schema=DESIGN_PLANNER_SCHEMA,
-                temperature=0.3,
-                max_tokens=1200,
+                temperature=1.0,
+                max_completion_tokens=1200,
             )
         except Exception as exc:
             reason = str(exc).strip()
@@ -127,6 +126,8 @@ class DesignPlanner:
             llm_result.get("suggestions", []),
             state.user_requirements,
         )
+        message = str(llm_result.get("assistant_message") or "").strip()
+        suggestions = string_suggestions(llm_result.get("suggestions"), [])
         if force_complete and missing_confirmable_game_plan_fields(game_plan):
             raise ProviderError(
                 "LLM provider did not complete game_plan within question budget",
@@ -135,15 +136,15 @@ class DesignPlanner:
                     "missing_fields": missing_confirmable_game_plan_fields(game_plan),
                 },
             )
-        status = (
-            "ready_to_confirm"
-            if not missing_confirmable_game_plan_fields(game_plan)
-            else "collecting"
-        )
+        status = "collecting"
+        if not missing_confirmable_game_plan_fields(game_plan):
+            status = (
+                "ready_to_confirm"
+                if force_complete or not message
+                else "collecting"
+            )
         update: dict[str, Any] = {"game_plan": game_plan, "conversation_status": status}
         if status == "collecting":
-            message = str(llm_result.get("assistant_message") or "").strip()
-            suggestions = string_suggestions(llm_result.get("suggestions"), [])
             missing_fields = missing_confirmable_game_plan_fields(game_plan)
             if not message:
                 raise ProviderError(
@@ -368,6 +369,10 @@ def _messages_from_state(
                 "conversation_history 是此前可见对话的最近历史，必须结合它理解用户已经回答过什么、"
                 "不要重复追问已在历史中明确回答的内容。"
                 "如果用户刚回答了上一轮追问，assistant_message 必须承接用户新答案，再换一种说法提出下一个关键追问。"
+                "如果 assistant_message 非空，表示你仍在收集需求；此时不要猜填所有缺失字段，"
+                "不要把未被用户明确回答的关键设定全部补满，尤其不要填写你正在追问的字段。"
+                "只有当你判断无需继续追问、可以立刻给用户确认卡片时，"
+                "assistant_message 必须为空字符串，suggestions 必须为空数组。"
                 "你必须根据 missing_game_plan_fields 和 missing_field_count 判断进度；"
                 "asked_game_plan_fields 是此前 assistant 已经追问过的字段。"
                 "不要追问与 asked_game_plan_fields 语义相同或高度相似的问题；"

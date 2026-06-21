@@ -29,6 +29,25 @@ def build_user_response(state: ConversationState) -> dict[str, Any]:
                 "actions": [] if missing_fields or not card else ["generate", "regenerate"],
             },
         }
+    if state.conversation_status == "collecting" and (
+        state.assistant_response.get("message")
+        or state.assistant_response.get("suggestions")
+    ):
+        message = state.assistant_response.get("message", "")
+        suggestions = state.assistant_response.get("suggestions", [])
+        return {
+            "conversation_status": "collecting",
+            "assistant_response": {
+                "message": friendly_design_message(
+                    message,
+                    missing_fields=missing_fields,
+                    game_plan=state.game_plan,
+                ),
+                "suggestions": suggestions,
+                "card": None,
+                "actions": [],
+            },
+        }
     if missing_fields:
         if state.assistant_response.get("message") or state.assistant_response.get(
             "suggestions"

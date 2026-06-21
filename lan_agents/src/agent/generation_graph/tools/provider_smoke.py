@@ -45,8 +45,8 @@ def run_provider_smoke(provider: LLMProvider | None = None) -> dict[str, Any]:
         response = active_provider.complete_json(
             messages=build_generation_smoke_messages(),
             response_schema=GENERATION_PROVIDER_SMOKE_SCHEMA,
-            temperature=0,
-            max_tokens=200,
+            temperature=1.0,
+            max_completion_tokens=200,
         )
     except Exception as exc:
         return {

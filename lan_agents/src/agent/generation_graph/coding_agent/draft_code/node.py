@@ -54,7 +54,9 @@ SECRET_PATTERN = re.compile(
     r"(sk-[A-Za-z0-9]+|X-Amz-Signature=|Authorization:|Bearer\s+[A-Za-z0-9._-]+)",
     re.IGNORECASE,
 )
-ABSOLUTE_PATH_PATTERN = re.compile(r"""(['"])\/(?!\/)[^'"]+\1|url\(\s*\/(?!\/)[^)]+\)""")
+ABSOLUTE_PATH_PATTERN = re.compile(
+    r"""(['"])(?:\/[A-Za-z._-][A-Za-z0-9._-]*\/[^'"]+|[A-Za-z]:\\[^'"]+)\1|url\(\s*\/[A-Za-z._-][A-Za-z0-9._-]*\/[^)]+\)"""
+)
 
 
 def draft_code(
@@ -66,19 +68,41 @@ def draft_code(
     if not state.artifact_workspace:
         raise ProviderError("Coding Agent requires artifact_workspace")
 
-    active_provider = provider or provider_from_env()
-    llm_result = _complete_coding_bundle(active_provider, state)
-    html = _require_text(llm_result.get("index_html"), "index_html")
-    css = _require_text(llm_result.get("style_css"), "style_css")
-    js = _require_text(llm_result.get("game_js"), "game_js")
-    js = ensure_game_ready_signal(js)
-    notes = _normalize_notes(llm_result.get("coding_notes"))
+    active_provider = provider or provider_from_env(
+        model_env_name="CODING_AGENT_MODEL",
+        fallback_model_env_name="OPENAI_COMPATIBLE_MODEL",
+    )
+    last_error: ProviderError | None = None
+    previous_attempt_error = ""
+    for attempt in range(2):
+        llm_result = _complete_coding_bundle(
+            active_provider,
+            state,
+            previous_attempt_error=previous_attempt_error,
+        )
+        try:
+            html = _require_text(llm_result.get("index_html"), "index_html")
+            css = _require_text(llm_result.get("style_css"), "style_css")
+            js = _require_text(llm_result.get("game_js"), "game_js")
+            js = ensure_game_ready_signal(js)
+            notes = _normalize_notes(llm_result.get("coding_notes"))
 
-    _reject_unsafe_content(html, "index_html")
-    _reject_unsafe_content(css, "style_css")
-    _reject_unsafe_content(js, "game_js")
+            _reject_unsafe_content(html, "index_html")
+            _reject_unsafe_content(css, "style_css")
+            _reject_unsafe_content(js, "game_js")
 
-    referenced_assets = _collect_asset_references([html, css, js], state.asset_manifest_plan)
+            referenced_assets = _collect_asset_references(
+                [html, css, js], state.asset_manifest_plan
+            )
+            break
+        except ProviderError as exc:
+            last_error = exc
+            if attempt == 1:
+                raise
+            previous_attempt_error = str(exc)
+    else:
+        assert last_error is not None
+        raise last_error
     manifest_draft = _build_manifest_draft(state, referenced_assets)
 
     workspace_root = ensure_workspace_root(state.artifact_workspace)
@@ -111,7 +135,9 @@ def draft_code(
     }
 
 
-def _messages_from_state(state: GenerationState) -> list[LLMMessage]:
+def _messages_from_state(
+    state: GenerationState, *, previous_attempt_error: str = ""
+) -> list[LLMMessage]:
     payload = {
         "development_brief": state.development_brief,
         "asset_manifest_plan": state.asset_manifest_plan,
@@ -122,6 +148,12 @@ def _messages_from_state(state: GenerationState) -> list[LLMMessage]:
             "controls": state.game_plan.get("controls"),
         },
     }
+    if previous_attempt_error:
+        payload["previous_attempt_error"] = previous_attempt_error
+        payload["repair_instruction"] = (
+            "Regenerate the full bundle. Fix the previous_attempt_error without "
+            "adding remote URLs, unplanned asset paths, secrets, or absolute local paths."
+        )
     return [
         LLMMessage(role="system", content=CODING_SYSTEM_PROMPT),
         LLMMessage(role="user", content=json.dumps(payload, ensure_ascii=False)),
@@ -131,22 +163,47 @@ def _messages_from_state(state: GenerationState) -> list[LLMMessage]:
 def _complete_coding_bundle(
     provider: LLMProvider,
     state: GenerationState,
+    *,
+    previous_attempt_error: str = "",
 ) -> dict[str, Any]:
     last_error: ProviderError | None = None
     for _attempt in range(2):
         try:
             return provider.complete_json(
-                messages=_messages_from_state(state),
+                messages=_messages_from_state(
+                    state,
+                    previous_attempt_error=previous_attempt_error,
+                ),
                 response_schema=CODING_RESPONSE_SCHEMA,
-                temperature=0.0,
-                max_tokens=5200,
+                temperature=1.0,
+                max_completion_tokens=12000,
             )
         except ProviderError as exc:
-            if "invalid json" not in str(exc).lower():
+            if not _is_retryable_provider_failure(str(exc)):
                 raise
             last_error = exc
     assert last_error is not None
     raise last_error
+
+
+def _is_retryable_provider_failure(message: str) -> bool:
+    normalized = message.lower()
+    retryable_http_statuses = (
+        "http error: 429",
+        "http error: 500",
+        "http error: 502",
+        "http error: 503",
+        "http error: 504",
+    )
+    return (
+        "invalid json" in normalized
+        or "request failed" in normalized
+        or "max_completion_tokens was exhausted" in normalized
+        or "finish_reason=length" in normalized
+        or "timed out" in normalized
+        or "timeout" in normalized
+        or any(status in normalized for status in retryable_http_statuses)
+    )
 
 
 def _require_text(value: Any, field_name: str) -> str:

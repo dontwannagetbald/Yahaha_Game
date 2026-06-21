@@ -24,6 +24,8 @@ const requiredTokens = [
   "card-like-button",
   "onLikeGame(game.id)",
   "onRequireLogin()",
+  "activeFeaturedGame.tags.map((tag) => (",
+  "game.tags.map((tag) => (",
 ];
 
 const requiredCssTokens = [
@@ -33,6 +35,14 @@ const requiredCssTokens = [
 ];
 
 const failures = [];
+
+if (home.includes("<span className=\"tag\">{game.tag}</span>")) {
+  failures.push("Expected Home cards to render every game tag, not only the primary tag.");
+}
+
+if (home.includes("<span className=\"tag\">{activeFeaturedGame.tag}</span>")) {
+  failures.push("Expected featured game to render every game tag, not only the primary tag.");
+}
 
 for (const token of requiredTokens) {
   if (!home.includes(token)) {

@@ -31,8 +31,8 @@ class MockLLMProvider:
         *,
         messages: list[LLMMessage],
         response_schema: dict[str, Any],
-        temperature: float = 0.2,
-        max_tokens: int = 1200,
+        temperature: float = 1.0,
+        max_completion_tokens: int = 1200,
     ) -> dict[str, Any]:
         """Return the configured response and record the call."""
         self.calls.append(
@@ -40,7 +40,7 @@ class MockLLMProvider:
                 "messages": messages,
                 "response_schema": response_schema,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
+                "max_completion_tokens": max_completion_tokens,
             }
         )
         if self._raises:
@@ -53,8 +53,8 @@ class MockLLMProvider:
         messages: list[LLMMessage],
         response_schema: dict[str, Any],
         attachments: list[dict[str, Any]],
-        temperature: float = 0.2,
-        max_tokens: int = 1200,
+        temperature: float = 1.0,
+        max_completion_tokens: int = 1200,
     ) -> dict[str, Any]:
         """Record reference attachments and return the configured response."""
         self.calls.append(
@@ -63,7 +63,7 @@ class MockLLMProvider:
                 "response_schema": response_schema,
                 "attachments": attachments,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
+                "max_completion_tokens": max_completion_tokens,
             }
         )
         if self._raises:

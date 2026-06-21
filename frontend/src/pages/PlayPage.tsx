@@ -53,8 +53,9 @@ export function PlayPage({
   const [runtimeManifest, setRuntimeManifest] = useState<PlayManifest | null>(null);
   const [loadProgress, setLoadProgress] = useState(0);
   const [retryKey, setRetryKey] = useState(0);
-  const relatedGames = games.filter(
-    (candidate) => candidate.tag === game.tag && candidate.id !== game.id,
+  const activeGameTags = new Set(game.tags);
+  const relatedGames = games.filter((candidate) =>
+    candidate.id !== game.id && candidate.tags.some((tag) => activeGameTags.has(tag)),
   );
   const displayLikes = formatCompactCount(game.likeCount);
   const controlHints = runtimeManifest?.controls ?? [];
@@ -280,7 +281,11 @@ export function PlayPage({
             </section>
           ) : null}
           <div className="tag-row">
-            <span className="tag">{game.tag}</span>
+            {game.tags.map((tag) => (
+              <span className="tag" key={tag}>
+                {tag}
+              </span>
+            ))}
           </div>
         </div>
 
@@ -299,14 +304,25 @@ export function PlayPage({
                 <span
                   className="more-game-cover"
                   style={{ backgroundImage: `url("${relatedGame.cover}")` }}
-                />
-                <span className="more-game-copy">
+                >
+                  <span className="more-game-cover-overlay">
+                    <span className="more-game-tags">
+                      {relatedGame.tags.map((tag) => (
+                        <span className="tag" key={tag}>
+                          {tag}
+                        </span>
+                      ))}
+                    </span>
+                    <span className="more-game-stats">
+                      <span>♥ {formatCompactCount(relatedGame.likeCount)}</span>
+                      <span>{relatedGame.plays}</span>
+                    </span>
+                  </span>
+                </span>
+                <span className="more-game-info">
                   <strong>{relatedGame.title}</strong>
                   <span>
                     {relatedGame.author} · {relatedGame.publishedAt}
-                  </span>
-                  <span>
-                    {relatedGame.plays} · {relatedGame.likes}
                   </span>
                 </span>
               </button>

@@ -22,13 +22,20 @@ class RecordingProvider(MockLLMProvider):
         )
         self.messages = []
 
-    def complete_json(self, *, messages, response_schema, temperature=0.2, max_tokens=1200):
+    def complete_json(
+        self,
+        *,
+        messages,
+        response_schema,
+        temperature=1.0,
+        max_completion_tokens=1200,
+    ):
         self.messages = messages
         return super().complete_json(
             messages=messages,
             response_schema=response_schema,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_completion_tokens,
         )
 
 
@@ -98,6 +105,42 @@ def test_design_planner_allows_overfill_after_question_budget() -> None:
     assert update["conversation_status"] == "ready_to_confirm"
     assert update["game_plan"]["title"] == "月光小猫"
     assert update["game_plan"]["introduction"]
+
+
+def test_design_planner_keeps_collecting_when_llm_overfills_but_still_asks() -> None:
+    provider = MockLLMProvider(
+        response={
+            "game_plan_patch": {
+                "title": "追逐伏地魔",
+                "tags": ["action", "adventure"],
+                "gameplay": "玩家扮演哈利，在魔法世界中追踪并阻止伏地魔的行动，穿越场景、躲避攻击、使用魔法对抗敌人。",
+                "core_loop": ["探索线索", "追踪目标", "施放魔法战斗", "推进到下一场遭遇"],
+                "style": "魔法奇幻，紧张冒险",
+                "characters": ["哈利", "伏地魔", "魔法敌人"],
+                "win_condition": "成功追上并击败伏地魔",
+                "lose_condition": "生命值耗尽或被伏地魔逃脱",
+                "controls": "方向键移动，按键施法与互动",
+            },
+            "assistant_message": "这个方向很有冲击力，已经能看出是追击+魔法对战的核心了🎮。我先确认一个最关键的设定：你希望它更像“动作追逐战”，还是“冒险解谜追踪战”？",
+            "suggestions": ["动作追逐战", "冒险解谜追踪战", "动作+少量解谜", "偏剧情冒险"],
+        }
+    )
+
+    update = DesignPlanner(provider=provider).plan(
+        ConversationState(
+            user_event={"type": "chat", "message": "哈利波特追逐伏地魔大战"},
+        )
+    )
+
+    assert update["conversation_status"] == "collecting"
+    assert update["assistant_response"]["card"] is None
+    assert "动作追逐战" in update["assistant_response"]["message"]
+    assert update["assistant_response"]["suggestions"] == [
+        "动作追逐战",
+        "冒险解谜追踪战",
+        "动作+少量解谜",
+        "偏剧情冒险",
+    ]
 
 
 def test_design_planner_prompt_lists_mvp_tags_for_external_model() -> None:
@@ -243,6 +286,19 @@ def test_design_planner_prompt_asks_to_complete_plan_in_fewest_rounds() -> None:
     assert "最短时间内补齐 game_plan" in system_prompt
     assert "优先选择一次能补齐最多缺失字段的问题" in system_prompt
     assert "suggestions 也要尽量覆盖多个缺失字段的组合答案" in system_prompt
+
+
+def test_design_planner_prompt_forbids_overfilling_when_asking_followup() -> None:
+    provider = RecordingProvider()
+
+    DesignPlanner(provider=provider).plan(
+        ConversationState(user_event={"type": "chat", "message": "哈利波特追逐伏地魔大战"})
+    )
+
+    system_prompt = provider.messages[0].content
+    assert "如果 assistant_message 非空" in system_prompt
+    assert "不要猜填所有缺失字段" in system_prompt
+    assert "assistant_message 必须为空字符串，suggestions 必须为空数组" in system_prompt
 
 
 def test_design_planner_prompt_uses_latest_fallback_game_plan_for_missing_fields() -> None:
@@ -537,7 +593,7 @@ def test_design_planner_partial_llm_plan_keeps_collecting_with_custom_followup()
     assert update["assistant_response"]["suggestions"] == ["梦幻卡通", "像素天空", "霓虹街机"]
 
 
-def test_design_planner_second_turn_can_complete_plan_from_existing_state() -> None:
+def test_design_planner_second_turn_keeps_collecting_when_llm_still_asks() -> None:
     provider = MockLLMProvider(
         response={
             "game_plan_patch": {
@@ -567,10 +623,13 @@ def test_design_planner_second_turn_can_complete_plan_from_existing_state() -> N
 
     update = planner.plan(state)
 
-    assert update["conversation_status"] == "ready_to_confirm"
+    assert update["conversation_status"] == "collecting"
     assert update["game_plan"]["characters"] == ["云朵精灵"]
     assert update["game_plan"]["win_condition"] == "收集20个光点"
-    assert "assistant_response" not in update
+    assert "玩家怎样才算赢" in update["assistant_response"]["message"]
+    assert update["assistant_response"]["suggestions"] == [
+        "收集20个光点，被风暴追上失败，方向键移动"
+    ]
 
 
 def test_design_planner_derives_core_loop_from_gameplay_when_model_omits_it() -> None:

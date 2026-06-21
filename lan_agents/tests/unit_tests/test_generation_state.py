@@ -26,6 +26,7 @@ EXPECTED_GENERATION_STATE_FIELDS = {
     "integrated_bundle_context",
     "debug_report",
     "validation_report",
+    "coding_repair_attempt_count",
     "artifact_result",
     "draft_game_meta",
     "status",
@@ -49,6 +50,7 @@ def test_generation_state_defaults_match_generation_contract() -> None:
     assert payload["asset_registry"] == []
     assert payload["agent_logs"] == []
     assert payload["artifact_workspace"] == ""
+    assert payload["coding_repair_attempt_count"] == 0
 
 
 def test_generation_state_uses_independent_mutable_defaults() -> None:

@@ -181,8 +181,8 @@ class RecordingAttachmentProvider(MockLLMProvider):
         messages: list[LLMMessage],
         response_schema: dict,
         attachments: list[dict],
-        temperature: float = 0.2,
-        max_tokens: int = 1200,
+        temperature: float = 1.0,
+        max_completion_tokens: int = 1200,
     ) -> dict:
         self.attachment_calls.append(
             {
@@ -190,14 +190,14 @@ class RecordingAttachmentProvider(MockLLMProvider):
                 "response_schema": response_schema,
                 "attachments": attachments,
                 "temperature": temperature,
-                "max_tokens": max_tokens,
+                "max_completion_tokens": max_completion_tokens,
             }
         )
         return super().complete_json(
             messages=messages,
             response_schema=response_schema,
             temperature=temperature,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_completion_tokens,
         )
 
 

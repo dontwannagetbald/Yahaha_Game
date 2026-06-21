@@ -47,27 +47,25 @@ for (const token of requiredCreateSessionsTokens) {
 const requiredCreatePageTokens = [
   "export type CreateUploadedFileItem",
   "useState<CreateUploadedFileItem[]>([])",
-  "let pendingAttachmentMessageId: string | null = null;",
-  "let pendingAttachmentCreatedAt: string | null = null;",
-  "if (pendingAttachments.length > 0) {",
-  "role: \"user\"",
-  "content: \"\"",
   "onUploadFiles: (files: File[]) => Promise<boolean>;",
   "const nextFiles = Array.from(event.target.files ?? [])",
   "file.size > MAX_CREATE_UPLOAD_SIZE_BYTES",
-  "void uploadSelectedFiles(acceptedItems, acceptedFiles)",
+  "status: \"pending\"",
+  "const filesToUpload = selectedFiles.filter(",
+  "const uploaded = await uploadSelectedFiles(",
+  "filesToUpload.map((file) => file.file)",
+  "const visibleFiles = selectedFiles;",
   "async function uploadSelectedFiles",
+  "return uploaded;",
   "file.status",
   "file.error",
   "handleRetryFile",
   "retry-file-button",
   "重试",
   "remove-file-button",
-  "onRemoveBoundFile: (assetId: string) => Promise<boolean>;",
-  "void onRemoveBoundFile(file.id)",
+  "待发送",
   "上传中",
   "上传失败",
-  "已绑定",
   "message.content.trim().length > 0 ? (",
 ];
 
@@ -89,7 +87,6 @@ const requiredAppTokens = [
   "material_usage.assets",
   "async function handleRemoveBoundCreateFile(assetId: string)",
   "onUploadFiles={handleUploadCreateFiles}",
-  "onRemoveBoundFile={handleRemoveBoundCreateFile}",
   "create_upload_bound",
   "create_upload_failed",
 ];
@@ -108,8 +105,20 @@ if (createPage.includes("useState<string[]>([])")) {
   failures.push("Expected selectedFiles to keep upload state, not only file names.");
 }
 
-if (createPage.includes("message.payload?.event_type !== \"upload_assets\"")) {
-  failures.push("Expected upload_assets messages to become visible user attachment bubbles instead of being filtered out.");
+if (/handleFileSelect[\s\S]*void uploadSelectedFiles\(/.test(createPage)) {
+  failures.push("Expected file selection to queue attachments instead of uploading before Send.");
+}
+
+if (createPage.includes("const visibleFiles = [...boundFiles, ...selectedFiles];")) {
+  failures.push("Expected composer attachments to stop showing already-bound files after send.");
+}
+
+if (createPage.includes("已绑定")) {
+  failures.push("Expected sent attachments to disappear from the composer instead of showing as bound chips.");
+}
+
+if (createPage.includes("onRemoveBoundFile(file.id)")) {
+  failures.push("Expected composer chips to only manage local pending files, not already-bound assets.");
 }
 
 if (failures.length > 0) {

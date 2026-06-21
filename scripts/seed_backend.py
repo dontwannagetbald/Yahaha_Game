@@ -7,9 +7,9 @@ import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BACKEND_DIR = REPO_ROOT / "backend"
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
+for candidate in (REPO_ROOT / "backend", REPO_ROOT):
+    if (candidate / "app").is_dir() and str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
 
 from app.config import settings
 from app.db import AsyncSessionLocal

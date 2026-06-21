@@ -180,6 +180,7 @@ class CapturingRunner(FakeAgentRunner):
                         "mime_type": asset.mime_type,
                         "size_bytes": asset.size_bytes,
                         "object_key": asset.object_key,
+                        "local_path": asset.local_path,
                     }
                     for asset in payload.uploaded_assets
                 ],
@@ -361,6 +362,15 @@ class RecordingStorageService:
     def __init__(self) -> None:
         self.objects: dict[str, tuple[bytes, str]] = {}
 
+    def build_upload_object_key(self, *, user_id, upload_id, filename: str) -> str:
+        return f"uploads/{user_id}/{upload_id}/{filename}"
+
+    def build_presigned_upload_url(self, object_key: str, *, expires_in: int = 900):
+        return StubPresignedReadResult(
+            f"http://localhost:9000/yahaha-game/{object_key}?X-Amz-Signature=test",
+            expires_in,
+        )
+
     def build_draft_object_key(self, *, user_id, job_id, version: str, relative_path: str) -> str:
         return f"drafts/{user_id}/{job_id}/{version}/{relative_path}"
 
@@ -492,10 +502,22 @@ async def test_langgraph_runner_preserves_validation_report_on_failure():
 def test_runner_input_contains_session_snapshots_and_assets(
     client: TestClient, session_factory
 ):
+    storage = RecordingStorageService()
+    app.dependency_overrides[jobs_module.get_storage_service] = lambda: storage
     runner = CapturingRunner(result=success_result())
     set_agent_runner(runner)
     register_and_login(client)
     asset_id = create_asset(client)
+    asset_object_key = ""
+    async def read_asset_key() -> None:
+        nonlocal asset_object_key
+        async with session_factory() as session:
+            asset = await session.get(UploadedAsset, uuid.UUID(asset_id))
+            assert asset is not None
+            asset_object_key = asset.object_key
+
+    asyncio.run(read_asset_key())
+    storage.objects[asset_object_key] = (b"uploaded-player-png", "image/png")
     session_id = create_confirmed_session(
         client,
         session_factory,
@@ -520,6 +542,9 @@ def test_runner_input_contains_session_snapshots_and_assets(
     assert call["material_usage"]["assets"][0]["asset_id"] == asset_id
     assert len(call["uploaded_assets"]) == 1
     assert call["uploaded_assets"][0]["asset_id"] == asset_id
+    uploaded_local_path = Path(call["uploaded_assets"][0]["local_path"])
+    assert uploaded_local_path.is_file()
+    assert uploaded_local_path.read_bytes() == b"uploaded-player-png"
     assert "X-Amz-Signature" not in str(call["uploaded_assets"])
 
 

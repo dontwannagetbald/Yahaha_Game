@@ -58,8 +58,8 @@ class RevisionPlanner:
             llm_result = self._provider.complete_json(
                 messages=_messages_from_state(state),
                 response_schema=REVISION_PLANNER_SCHEMA,
-                temperature=0.2,
-                max_tokens=900,
+                temperature=1.0,
+                max_completion_tokens=900,
             )
             update = _normalize_llm_result(llm_result)
             if update:

@@ -93,7 +93,11 @@ def debug_code_with_assets(
         asset_check = final_asset_check
         runtime_check = final_runtime_check
         repair_notes = deterministic_ready_repair
-    elif provider and _needs_repair(initial_asset_check, initial_runtime_check):
+    elif provider and _needs_repair(
+        initial_asset_check,
+        initial_runtime_check,
+        state.validation_report,
+    ):
         repair_update = _attempt_repair(state, bundle_context, provider)
         if repair_update:
             bundle_context = _build_bundle_context(state)
@@ -170,8 +174,12 @@ def _refresh_code_artifacts(code_artifacts: dict[str, Any]) -> dict[str, Any]:
 
 
 def _needs_repair(
-    asset_check: dict[str, Any], runtime_check: dict[str, Any]
+    asset_check: dict[str, Any],
+    runtime_check: dict[str, Any],
+    validation_report: dict[str, Any] | None = None,
 ) -> bool:
+    if validation_report and validation_report.get("valid") is False:
+        return True
     if asset_check["issues"]:
         return False
     if asset_check["manifest_missing_from_code"] or asset_check["code_missing_from_manifest"]:
@@ -187,8 +195,8 @@ def _attempt_repair(
     response = provider.complete_json(
         messages=_build_repair_messages(state, bundle_context),
         response_schema=DEBUG_RESPONSE_SCHEMA,
-        temperature=0.0,
-        max_tokens=2600,
+        temperature=1.0,
+        max_completion_tokens=2600,
     )
     repair_notes = _normalize_repair_notes(response.get("repair_notes"))
     workspace = Path(state.artifact_workspace)
@@ -275,6 +283,7 @@ def _build_repair_messages(
             str(bundle_context["code_artifacts"]["index_html_path"])
         ),
         "asset_reference_check": check_asset_references(bundle_context),
+        "validation_report": state.validation_report,
         "current_files": {
             "index_html": Path(
                 bundle_context["code_artifacts"]["index_html_path"]

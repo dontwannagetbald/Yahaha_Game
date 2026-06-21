@@ -192,34 +192,75 @@
 }
 
 .play-page .more-game-card {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr);
-  gap: 10px;
-  align-items: stretch;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 8px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.04);
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
   color: inherit;
   text-align: left;
 }
 
 .play-page .more-game-cover {
+  position: relative;
   display: block;
-  min-height: 72px;
-  border-radius: 12px;
+  overflow: hidden;
+  aspect-ratio: 16 / 10;
+  border-radius: 18px;
   background-color: rgba(255, 255, 255, 0.08);
   background-position: center;
   background-size: cover;
 }
 
-.play-page .more-game-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
+.play-page .more-game-cover::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 48%, rgba(15, 17, 18, 0.9));
+  content: "";
 }
 
-.play-page .more-game-copy strong {
+.play-page .more-game-cover-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.play-page .more-game-tags {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  max-width: calc(100% - 20px);
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.play-page .more-game-tags .tag {
+  font-size: 10px;
+}
+
+.play-page .more-game-stats {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: rgba(255, 255, 255, 0.94);
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.48);
+}
+
+.play-page .more-game-info {
+  display: grid;
+  gap: 6px;
+  padding-top: 10px;
+}
+
+.play-page .more-game-info strong {
   overflow: hidden;
   font-size: 14px;
   line-height: 1.35;
@@ -227,7 +268,7 @@
   white-space: nowrap;
 }
 
-.play-page .more-game-copy span {
+.play-page .more-game-info span {
   overflow: hidden;
   color: rgba(255, 255, 255, 0.62);
   font-size: 12px;

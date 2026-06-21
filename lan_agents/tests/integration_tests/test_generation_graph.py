@@ -111,17 +111,23 @@ async def test_draft_game_code_uses_configured_provider_when_not_mock(
             }
 
     provider = RecordingCodingProvider()
+    seen_config_kwargs = {}
 
     class NonMockProviderConfig:
         @classmethod
-        def from_env(cls):
+        def from_env(cls, **kwargs):
+            seen_config_kwargs.update(kwargs)
             return SimpleNamespace(provider="openai-compatible")
 
     monkeypatch.setattr(graph_module, "ProviderConfig", NonMockProviderConfig, raising=False)
-    monkeypatch.setattr(graph_module, "provider_from_env", lambda: provider, raising=False)
+    monkeypatch.setattr(graph_module, "provider_from_config", lambda config: provider, raising=False)
 
     update = graph_module.draft_game_code(state)
 
+    assert seen_config_kwargs == {
+        "model_env_name": "CODING_AGENT_MODEL",
+        "fallback_model_env_name": "OPENAI_COMPATIBLE_MODEL",
+    }
     assert provider.calls
     game_js = Path(update["code_artifacts"]["game_js_path"]).read_text(encoding="utf-8")
     assert "REAL_PROVIDER_SENTINEL" in game_js
@@ -157,3 +163,81 @@ async def test_generation_graph_finalizes_failure_when_validator_rejects_bundle(
     assert result["error_message"]
     assert result["retry_hint"]
     assert any(log["level"] == "error" for log in result["agent_logs"])
+
+
+async def test_generation_graph_repairs_once_after_validator_rejects_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    graph_module = importlib.import_module("agent.generation_graph.graph")
+    fixture = _load_generation_fixture(tmp_path)
+    validation_calls = {"count": 0}
+
+    def reject_then_accept(state):
+        validation_calls["count"] += 1
+        if validation_calls["count"] == 1:
+            return {
+                "generation_status": "failed",
+                "failed_step": "validator_agent",
+                "error_message": "最终验收失败：external_cdn_detected (game.js)。",
+                "retry_hint": "请根据 validation_report 调整素材或重试生成。",
+                "validation_report": {
+                    "valid": False,
+                    "issues": [
+                        {
+                            "kind": "external_cdn_detected",
+                            "path": "game.js",
+                            "message": "External URL detected in static bundle.",
+                        }
+                    ],
+                },
+                "agent_logs": [
+                    *state.agent_logs,
+                    {
+                        "step": "validator_agent",
+                        "level": "error",
+                        "message": "validator rejected first bundle",
+                    },
+                ],
+            }
+        return {
+            "generation_status": "succeeded",
+            "validation_report": {"valid": True, "issues": []},
+            "artifact_result": {
+                "workspace": state.artifact_workspace,
+                "manifest_path": f"{state.artifact_workspace}/manifest.json",
+                "entry_path": f"{state.artifact_workspace}/index.html",
+                "asset_paths": [],
+                "cover_path": "assets/cover.png",
+            },
+            "draft_game_meta": {
+                "title": state.game_plan.get("title", ""),
+                "description": state.game_plan.get("introduction", ""),
+                "tags": state.game_plan.get("tags", []),
+                "cover_path": "assets/cover.png",
+                "manifest_path": "manifest.json",
+                "entry_path": "index.html",
+            },
+            "agent_logs": [
+                *state.agent_logs,
+                {
+                    "step": "validator_agent",
+                    "level": "info",
+                    "message": "validator accepted repaired bundle",
+                },
+            ],
+        }
+
+    monkeypatch.setattr(graph_module, "validate_final_delivery", reject_then_accept)
+
+    result = await generation_graph.ainvoke(fixture)
+
+    assert validation_calls["count"] == 2
+    assert result["generation_status"] == "succeeded"
+    assert result["status"] == "succeeded"
+    assert result["validation_report"]["valid"] is True
+    assert result["coding_repair_attempt_count"] == 1
+    assert any(
+        log["step"] == "coding_agent.repair_code"
+        and "validation_report" in log["message"]
+        for log in result["agent_logs"]
+    )

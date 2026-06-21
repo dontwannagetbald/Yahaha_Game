@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from urllib.error import HTTPError
 
@@ -82,6 +84,62 @@ def test_provider_config_loads_dotenv_from_working_tree(
     assert config.model == "test-model"
 
 
+def test_provider_config_can_load_coding_agent_model_override(
+    tmp_path, monkeypatch
+) -> None:
+    project = tmp_path / "project"
+    agents = project / "lan_agents"
+    agents.mkdir(parents=True)
+    (project / ".env").write_text(
+        "\n".join(
+            [
+                "LLM_PROVIDER=openai-compatible",
+                "OPENAI_COMPATIBLE_API_KEY=test-key",
+                "OPENAI_COMPATIBLE_BASE_URL=https://llm.example/v1",
+                "OPENAI_COMPATIBLE_MODEL=general-model",
+                "CODING_AGENT_MODEL=gpt-5.5",
+            ]
+        )
+    )
+    monkeypatch.chdir(agents)
+    for name in [
+        "LLM_PROVIDER",
+        "OPENAI_COMPATIBLE_API_KEY",
+        "OPENAI_COMPATIBLE_BASE_URL",
+        "OPENAI_COMPATIBLE_MODEL",
+        "CODING_AGENT_MODEL",
+    ]:
+        monkeypatch.delenv(name, raising=False)
+
+    config = ProviderConfig.from_env(
+        model_env_name="CODING_AGENT_MODEL",
+        fallback_model_env_name="OPENAI_COMPATIBLE_MODEL",
+    )
+
+    assert config.provider == "openai-compatible"
+    assert config.model == "gpt-5.5"
+
+
+def test_provider_config_reads_llm_timeout_from_environment(monkeypatch) -> None:
+    monkeypatch.setenv("LLM_TIMEOUT_SECONDS", "240")
+    monkeypatch.delenv("OPENAI_COMPATIBLE_TIMEOUT_SECONDS", raising=False)
+
+    config = ProviderConfig.from_env()
+
+    assert config.timeout_seconds == 240.0
+
+
+def test_provider_config_falls_back_to_openai_compatible_timeout(
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.setenv("OPENAI_COMPATIBLE_TIMEOUT_SECONDS", "180")
+
+    config = ProviderConfig.from_env()
+
+    assert config.timeout_seconds == 180.0
+
+
 def test_parse_json_object_content_accepts_fenced_json() -> None:
     content = '```json\n{"ok": true, "stage": "generation_provider_smoke"}\n```'
 
@@ -111,6 +169,35 @@ def test_parse_chat_completion_response_can_emit_debug_preview(monkeypatch) -> N
     raw = '{"error":{"message":"model overloaded"}}'
 
     with pytest.raises(ProviderError, match="raw preview:"):
+        parse_chat_completion_response(raw)
+
+
+def test_parse_chat_completion_response_reports_length_truncation() -> None:
+    raw = json.dumps(
+        {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {"role": "assistant", "content": ""},
+                }
+            ],
+            "model": "gpt-5.5",
+            "usage": {
+                "completion_tokens": 5200,
+                "completion_tokens_details": {"reasoning_tokens": 5200},
+            },
+        }
+    )
+
+    with pytest.raises(
+        ProviderError,
+        match=(
+            "max_completion_tokens was exhausted.*"
+            "finish_reason=length.*"
+            "completion_tokens=5200.*"
+            "reasoning_tokens=5200"
+        ),
+    ):
         parse_chat_completion_response(raw)
 
 
@@ -186,6 +273,30 @@ def test_openai_provider_uses_responses_api_for_reference_attachments(
     responses_payload = calls[1]["data"].decode("utf-8")
     assert '"type": "input_file"' in responses_payload
     assert '"file_id": "file-reference-123"' in responses_payload
+
+
+def test_openai_provider_includes_os_error_detail(monkeypatch) -> None:
+    def fake_urlopen(_http_request, timeout):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr("agent.providers.openai_compatible.request.urlopen", fake_urlopen)
+    provider = OpenAICompatibleLLMProvider(
+        ProviderConfig(
+            provider="openai-compatible",
+            api_key="test-key",
+            base_url="https://api.openai.test/v1",
+            model="gpt-test",
+        )
+    )
+
+    with pytest.raises(
+        ProviderError,
+        match="LLM provider request failed: TimeoutError: timed out",
+    ):
+        provider.complete_json(
+            messages=[LLMMessage(role="user", content="Build a game")],
+            response_schema={"type": "object"},
+        )
 
 
 def test_openai_provider_accepts_wrapped_file_upload_response(
@@ -304,7 +415,7 @@ def test_openai_provider_file_upload_without_id_reports_response_preview(
         )
 
 
-def test_openai_provider_retries_chat_completion_with_max_completion_tokens(
+def test_openai_provider_sends_max_completion_tokens(
     monkeypatch,
 ) -> None:
     calls = []
@@ -328,18 +439,8 @@ def test_openai_provider_retries_chat_completion_with_max_completion_tokens(
     def fake_urlopen(http_request, timeout):
         payload = http_request.data.decode("utf-8")
         calls.append(payload)
-        if len(calls) == 1:
-            raise HTTPError(
-                http_request.full_url,
-                400,
-                "Bad Request",
-                hdrs=None,
-                fp=FakeResponse(
-                    '{"error":{"message":"Unsupported parameter: max_tokens is not supported with this model. Use max_completion_tokens instead."}}'
-                ),
-            )
         return FakeResponse(
-            '{"choices":[{"message":{"content":"{\\"ok\\":true,\\"retry\\":\\"max_completion_tokens\\"}"}}]}'
+            '{"choices":[{"message":{"content":"{\\"ok\\":true,\\"limit\\":\\"max_completion_tokens\\"}"}}]}'
         )
 
     monkeypatch.setattr("agent.providers.openai_compatible.request.urlopen", fake_urlopen)
@@ -355,15 +456,63 @@ def test_openai_provider_retries_chat_completion_with_max_completion_tokens(
     result = provider.complete_json(
         messages=[LLMMessage(role="user", content="Build contracts")],
         response_schema={"type": "object"},
-        max_tokens=777,
+        max_completion_tokens=777,
     )
 
-    assert result == {"ok": True, "retry": "max_completion_tokens"}
+    assert result == {"ok": True, "limit": "max_completion_tokens"}
     first_payload = calls[0]
-    second_payload = calls[1]
-    assert '"max_tokens": 777' in first_payload
-    assert '"max_completion_tokens": 777' in second_payload
-    assert '"max_tokens"' not in second_payload
+    assert '"max_completion_tokens": 777' in first_payload
+    assert len(calls) == 1
+
+
+def test_openai_provider_sends_default_temperature_for_model_that_requires_it(
+    monkeypatch,
+) -> None:
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, body: str) -> None:
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self, *_args):
+            return self._body.encode("utf-8")
+
+        def close(self):
+            return None
+
+    def fake_urlopen(http_request, timeout):
+        payload = http_request.data.decode("utf-8")
+        calls.append(payload)
+        return FakeResponse(
+            '{"choices":[{"message":{"content":"{\\"ok\\":true,\\"temperature\\":\\"default\\"}"}}]}'
+        )
+
+    monkeypatch.setattr("agent.providers.openai_compatible.request.urlopen", fake_urlopen)
+    provider = OpenAICompatibleLLMProvider(
+        ProviderConfig(
+            provider="openai-compatible",
+            api_key="test-key",
+            base_url="https://api.openai.test/v1",
+            model="gpt-5.5",
+        )
+    )
+
+    result = provider.complete_json(
+        messages=[LLMMessage(role="user", content="Generate code")],
+        response_schema={"type": "object"},
+        temperature=1.0,
+    )
+
+    assert result == {"ok": True, "temperature": "default"}
+    first_payload = calls[0]
+    assert '"temperature": 1.0' in first_payload
+    assert len(calls) == 1
 
 
 def test_parse_responses_api_response_reads_output_text() -> None:
