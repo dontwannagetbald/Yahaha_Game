@@ -16,6 +16,13 @@ def test_settings_uses_root_env_file_when_cwd_is_backend(monkeypatch):
     assert settings.model_config["env_file"] == REPO_ROOT / ".env"
 
 
+def test_settings_defaults_to_real_generation_chain_when_env_not_loaded():
+    settings = Settings(_env_file=None)
+
+    assert settings.model_provider == "openai-compatible"
+    assert settings.agent_runner == "langgraph"
+
+
 def test_missing_database_url_fails_configuration_validation():
     settings = Settings(database_url="", model_provider="mock")
 
@@ -77,6 +84,17 @@ def test_env_example_covers_validated_settings():
         assert f"{variable}=" in env_example
 
 
+def test_env_example_defaults_to_real_generation_chain_without_committed_secrets():
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+
+    assert "MODEL_PROVIDER=openai-compatible" in env_example
+    assert "AGENT_RUNNER=langgraph" in env_example
+    assert "LLM_PROVIDER=openai-compatible" in env_example
+    assert "ASSET_IMAGE_PROVIDER=openai-compatible" in env_example
+    assert "OPENAI_COMPATIBLE_API_KEY=\n" in env_example
+    assert "OPENAI_IMAGE_API_KEY=\n" in env_example
+
+
 def test_backend_dockerfile_installs_node_for_agent_runtime_validation():
     dockerfile = (REPO_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
 
@@ -125,3 +143,15 @@ def test_docker_compose_starts_frontend_by_default():
     assert 'context: ./frontend' in compose
     assert '- "5173:80"' in compose
     assert "VITE_API_PROXY_TARGET" not in compose
+
+
+def test_docker_compose_defaults_to_real_generation_chain():
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert 'MODEL_PROVIDER: ${MODEL_PROVIDER:-openai-compatible}' in compose
+    assert 'AGENT_RUNNER: ${AGENT_RUNNER:-langgraph}' in compose
+    assert (
+        'LLM_PROVIDER: ${LLM_PROVIDER:-${MODEL_PROVIDER:-openai-compatible}}'
+        in compose
+    )
+    assert 'ASSET_IMAGE_PROVIDER: ${ASSET_IMAGE_PROVIDER:-openai-compatible}' in compose

@@ -2,13 +2,21 @@
 
 本文档记录已实现功能、对应实施计划 step，以及尚未落地或需要补齐的边界。项目 layer、目录边界和文件职责维护在 [architecture.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/architecture.md)。
 
+### 2026-06-22：默认发布口径切到真实生成链路 ☑️ 已完成
+
+- 已将 `.env.example` 默认值从 `fake/mock` 切到真实链路：`AGENT_RUNNER=langgraph`、`MODEL_PROVIDER=openai-compatible`、`LLM_PROVIDER=openai-compatible`、`ASSET_IMAGE_PROVIDER=openai-compatible`，但所有模型密钥继续留空，不把私密配置提交进仓库（Step 1.1）。
+- 已同步更新 `docker-compose.yml` fallback 环境变量与 `backend/app/config.py` 默认值，避免评委未显式覆盖时又悄悄回退到 fake/mock（Step 1.1）。
+- 已更新 `README.md` 的启动说明和环境变量说明，明确要求评委先在 `.env` 中填写自己的文本/图片模型地址、密钥和模型名，再执行 `docker compose up --build`（Step 1.3）。
+- 已补充配置回归测试，锁定“仓库默认发布口径 = 真实链路但不提交密钥”的约束（Step 1.1）。
+- 已验证 `cd backend && ../.venv/bin/pytest tests/test_config.py -q`、`cd frontend && npm run build`、`python3 -m py_compile backend/app/config.py backend/app/seed.py scripts/seed_backend.py` 通过，结果分别为 `15 passed`、`vite build` 成功、`py_compile` 成功（Step 1.1）。
+
 ### 2026-06-22：Compose 改为真正一键启动 ☑️ 已完成
 
 - 已将 `frontend/Dockerfile` 切到 `Node build + Nginx runtime` 两阶段镜像，容器启动后直接托管静态产物，不再依赖 Vite 开发服务器（Step 1.1）。
 - 已新增 `frontend/nginx.conf`，把 `/api/` 反向代理到 `backend:8000`，并用 `try_files ... /index.html` 兜底 SPA 路由，保证容器内前后端联通和刷新页面可用（Step 1.1）。
 - 已更新 `docker-compose.yml`，移除 frontend 的 `docker-frontend` 可选 profile，让 `docker compose up --build` 默认同时启动 frontend、backend、PostgreSQL 和 MinIO，评委无需额外切 profile（Step 1.1）。
 - 已同步更新 `README.md`、`docs/architecture.md` 和本文档，统一为当前真实部署口径：Compose 默认全栈启动，frontend 容器监听宿主机 `5173`，首页首开即可看到 5 个 seed 游戏（Step 1.3、Step 10）。
-- 已验证 `cd backend && ../.venv/bin/pytest tests/test_seed.py tests/test_config.py -q`、`cd frontend && npm run build`、`python3 -m py_compile backend/app/seed.py scripts/seed_backend.py` 通过，结果分别为 `12 passed`、`vite build` 成功、`py_compile` 成功（Step 1.1、Step 10）。
+- 已验证 `cd backend && ../.venv/bin/pytest tests/test_seed.py tests/test_config.py -q`、`cd frontend && npm run build`、`python3 -m py_compile backend/app/seed.py scripts/seed_backend.py` 通过，结果分别为 `15 passed`、`vite build` 成功、`py_compile` 成功（Step 1.1、Step 10）。
 
 ### 2026-06-22：修复确认游戏卡片后重复弹出新卡片 ☑️ 已完成
 

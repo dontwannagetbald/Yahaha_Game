@@ -7,7 +7,7 @@
 ├── AGENTS.md                         协作规则：中文响应（Step 0.1）、文档分工（Step 0.1）
 ├── README.md                         启动说明：Compose 命令（Step 1.3）、示例游戏说明（Step 10）
 ├── prd.md                            原始需求：需求留存（Step 0.1）、验收约束（Step 0.1）
-├── .env.example                      环境样例：前后端地址（Step 0.3）、LLM 超时（Backend Agent Debug）
+├── .env.example                      环境样例：前后端地址（Step 0.3）、真实链路占位（Step 1.1）
 ├── .gitignore                        忽略规则：依赖排除（Step 0.1）、缓存排除（Step 0.1）
 ├── .dockerignore                     镜像忽略：pycache 排除（Agent Step 1.25）、依赖排除（Agent Step 1.25）
 ├── docker-compose.yml                本地编排：基础服务（Step 1.1）、默认全栈启动（Step 1.1）
@@ -176,7 +176,7 @@
 │   │   ├── __init__.py               包标记：模块导入（Step 0.2）
 │   │   ├── auth.py                   认证路由：邮箱登录注册（Step 3）、注册头像上传（Frontend Step 3.4）、可选鉴权（Step 4）、游客识别（Step 6）
 │   │   ├── agent_runner.py           执行器边界：会话快照输入（Step 8.10）、封面路径保留（Backend Asset Debug）
-│   │   ├── config.py                 配置读取：根目录 .env（Step 3）、Agent runner 开关（Backend Agent Step 3）
+│   │   ├── config.py                 配置读取：根目录 .env（Step 3）、真实链路默认值（Step 1.1）
 │   │   ├── db.py                     数据库层：异步引擎（Step 2.2）、会话依赖（Step 2.2）
 │   │   ├── main.py                   API 入口：健康检查（Step 2.1）、Create Sessions 挂载（Step 7.6）、任务恢复（Backend Job Recovery）
 │   │   ├── models.py                 数据模型：认证表（Step 2.3）、validation report（Backend Agent Debug）

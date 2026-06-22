@@ -46,8 +46,8 @@ class Settings(BaseSettings):
     github_client_secret: str = ""
     github_redirect_uri: str = "http://localhost:8000/api/auth/oauth/github/callback"
 
-    model_provider: str = "mock"
-    agent_runner: str = "fake"
+    model_provider: str = "openai-compatible"
+    agent_runner: str = "langgraph"
     mock_provider_enabled: bool = True
     openai_compatible_base_url: str = "https://api.example.com/v1"
     openai_compatible_api_key: str = ""
