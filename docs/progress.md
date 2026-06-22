@@ -2,6 +2,14 @@
 
 本文档记录已实现功能、对应实施计划 step，以及尚未落地或需要补齐的边界。项目 layer、目录边界和文件职责维护在 [architecture.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/architecture.md)。
 
+### 2026-06-22：Compose 改为真正一键启动 ☑️ 已完成
+
+- 已将 `frontend/Dockerfile` 切到 `Node build + Nginx runtime` 两阶段镜像，容器启动后直接托管静态产物，不再依赖 Vite 开发服务器（Step 1.1）。
+- 已新增 `frontend/nginx.conf`，把 `/api/` 反向代理到 `backend:8000`，并用 `try_files ... /index.html` 兜底 SPA 路由，保证容器内前后端联通和刷新页面可用（Step 1.1）。
+- 已更新 `docker-compose.yml`，移除 frontend 的 `docker-frontend` 可选 profile，让 `docker compose up --build` 默认同时启动 frontend、backend、PostgreSQL 和 MinIO，评委无需额外切 profile（Step 1.1）。
+- 已同步更新 `README.md`、`docs/architecture.md` 和本文档，统一为当前真实部署口径：Compose 默认全栈启动，frontend 容器监听宿主机 `5173`，首页首开即可看到 5 个 seed 游戏（Step 1.3、Step 10）。
+- 已验证 `cd backend && ../.venv/bin/pytest tests/test_seed.py tests/test_config.py -q`、`cd frontend && npm run build`、`python3 -m py_compile backend/app/seed.py scripts/seed_backend.py` 通过，结果分别为 `12 passed`、`vite build` 成功、`py_compile` 成功（Step 1.1、Step 10）。
+
 ### 2026-06-22：修复确认游戏卡片后重复弹出新卡片 ☑️ 已完成
 
 - 已定位“点击确认游戏卡片后又弹出一个卡片”的根因：`confirm` 事件走完 conversation graph 后，后端事件处理对非 `regenerate` 事件统一调用 `_append_assistant_message()`；由于 graph 的确认响应仍带 `assistant_response.card`，确认后消息流会额外追加一条新的 assistant card（Create Confirm Card）。
@@ -495,7 +503,7 @@
 - 仓库基线：保留原始需求、设计文档、技术栈、实施计划和架构记录；通过 `.gitignore` 排除本地依赖、构建产物、虚拟环境和缓存（Step 0.1）。
 - 目录结构：建立 `frontend/`、`backend/`、`deployment/`、`scripts/`、`docs/` 的清晰边界，并通过 `.gitkeep` 保留暂未放置业务文件的目录（Step 0.2）。
 - 环境变量样例：提供前端、后端、PostgreSQL、MinIO、Session、OpenAI-compatible API 和 Mock provider 变量样例，并使用占位值避免真实密钥（Step 0.3）。
-- Docker Compose 基线：定义 PostgreSQL、MinIO、backend、frontend 服务，包含持久化 volume、健康检查、端口映射和服务依赖；frontend 已改为可选 profile，默认本地 Vite 开发（Step 1.1、Frontend Step 3.4）。
+- Docker Compose 基线：定义 PostgreSQL、MinIO、backend、frontend 服务，包含持久化 volume、健康检查、端口映射和服务依赖；当前默认一键启动全栈，frontend 容器采用静态构建与 Nginx 托管（Step 1.1、Frontend Step 3.4）。
 - MinIO 初始化：使用单 bucket 保存 `published/*`、`uploads/*`、`drafts/*`，并通过 prefix policy 仅公开 `published/*` 读取权限（Step 1.2）。
 - 本地启动说明：README 提供复制 `.env.example`、一条 Compose 启动命令、端口说明和健康检查命令（Step 1.3）。
 - 业务表迁移：已创建 `games`、`game_likes`、`generation_jobs`、`uploaded_assets`、`agent_logs`、`play_events`，并验证 Alembic 升级到 `0002_business_tables`（Step 1）。
@@ -510,7 +518,7 @@
 - Backend Agent 空白会话修正：Create 自动创建空会话时不再触发 `invalid` 路由，后端会写入可恢复的 assistant 欢迎消息并等待用户首条消息（Backend Agent Step 1）。
 - 任务接口：已改造 `POST /api/jobs`，只从 confirmed `create_session` 创建初始生成任务，保存会话快照并返回 `session_id`（Step 8.1-Step 8.8、Step 8.15-Step 8.16）。
 - 执行器边界：已实现 fake runner、会话快照输入、后台状态迁移、Agent 日志落库和 draft game 创建，后端创建任务后可自动推进到 `succeeded / failed`（Step 8.9-Step 8.14）。
-- Seed 游戏数据：已提供可重复执行的 published 可玩游戏写入，当前直接读取根目录 `examples/` 的 3 套真实 bundle，并在 backend 容器启动时自动写入数据库与 `published/*`，便于评委首次打开首页直接看到示例游戏（Step 10）。
+- Seed 游戏数据：已提供可重复执行的 published 可玩游戏写入，当前直接读取根目录 `examples/` 的 5 套真实 bundle，并在 backend 容器启动时自动写入数据库与 `published/*`，便于评委首次打开首页直接看到示例游戏（Step 10）。
 - 独立 Agent 原型：已新增根目录 `agent/`，可在不接前后端的情况下本地运行 `conversation -> generation -> manifest` 全链路，并产出静态 bundle、校验结果和 provider 配置边界（Agent Prototype Step 1）。
 - LangGraph 部署配置：已新增 `agent/langgraph.json`、`agent/my_agent/agent.py` 和 `agent/my_agent/requirements.txt`，可导出真实 `CompiledStateGraph` 并按 LangGraph 平台约定声明依赖与环境变量入口（Agent Prototype Step 1）。
 - LangSmith tracing：已在独立 `agent/` 原型中接入 `LANGSMITH_TRACING / LANGSMITH_API_KEY / LANGSMITH_PROJECT / LANGSMITH_ENDPOINT` 配置、graph run metadata 和 runner tracing context（Agent Prototype Step 1）。
@@ -1352,7 +1360,7 @@
 - 已重写 `frontend/src/pages/home.css`，整体下调标题、按钮、筛选器和卡片字号，减少首屏拥挤感，并让搜索与筛选从背景图中独立出来（Frontend Step 3.4）。
 - 已调整 `frontend/src/styles.css` 顶部导航比例，收窄导航高度、站名字号、导航间距、头像尺寸和登录按钮尺寸，使其更接近 Yahaha 官网导航风格（Frontend Step 3.4）。
 - 已运行 `npm run build` 和 `npm run test:routing-structure`，确认视觉重排后前端构建与页面拆分结构仍然通过（Frontend Step 3.4）。
-- 已将 `docker-compose.yml` 中 frontend 服务切换为 `docker-frontend` 可选 profile，并在 `README.md` 中明确推荐「backend 走 Docker、frontend 本地 `npm run dev`」的开发方式，避免旧前端容器缓存页面（Frontend Step 3.4）。
+- 已将 `docker-compose.yml` 中 frontend 服务切换为 `docker-frontend` 可选 profile，并在 `README.md` 中明确推荐「backend 走 Docker、frontend 本地 `npm run dev`」的开发方式，避免旧前端容器缓存页面；该临时策略已在 `2026-06-22` 更新为默认 frontend 容器静态托管和 `docker compose up --build` 一键启动（Frontend Step 3.4）。
 - 已为 `frontend/vite.config.ts` 增加 `envDir: ".."` 和 `/api -> http://localhost:8000` 本地代理，修复本地 Vite 开发时 Google 登录等 Auth 请求误打到 5173 返回 HTML 的问题；并通过 `npm run test:auth-client`、`npm run build` 验证（Frontend Step 3.4）。
 - 已为邮箱注册增加昵称和头像上传链路：新增后端 `/api/auth/avatar/presign`、`/api/auth/avatar/complete`，允许注册前上传头像并在注册时写入 `avatar_url`；MinIO 匿名读取策略已扩展到 `avatars/*`（Frontend Step 3.4）。
 - 已在前端 Auth Modal 中增加昵称输入、头像文件选择和密码规则提示；注册时执行“头像预签名 -> 直传 -> 完成上传 -> 提交注册”的真实链路（Frontend Step 3.4）。

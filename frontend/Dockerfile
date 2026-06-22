@@ -1,4 +1,4 @@
-FROM public.ecr.aws/docker/library/node:22-alpine
+FROM public.ecr.aws/docker/library/node:22-alpine AS build
 
 WORKDIR /app
 
@@ -7,6 +7,11 @@ RUN npm install
 
 COPY . .
 
-EXPOSE 5173
+RUN npm run build
 
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+FROM public.ecr.aws/nginx/nginx:alpine
+
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80

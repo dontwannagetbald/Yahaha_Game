@@ -97,3 +97,31 @@ def test_backend_dockerfile_copies_examples_and_runs_seed_before_server_start():
     assert "COPY examples ./examples" in dockerfile
     assert "COPY scripts ./scripts" in dockerfile
     assert "python scripts/seed_backend.py" in dockerfile
+
+
+def test_frontend_dockerfile_builds_static_bundle_and_serves_with_nginx():
+    dockerfile = (REPO_ROOT / "frontend" / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "FROM public.ecr.aws/docker/library/node:22-alpine AS build" in dockerfile
+    assert "RUN npm install" in dockerfile
+    assert "RUN npm run build" in dockerfile
+    assert "FROM public.ecr.aws/nginx/nginx:alpine" in dockerfile
+    assert "COPY nginx.conf /etc/nginx/conf.d/default.conf" in dockerfile
+    assert "COPY --from=build /app/dist /usr/share/nginx/html" in dockerfile
+
+
+def test_frontend_nginx_config_handles_spa_and_api_proxy():
+    nginx_config = (REPO_ROOT / "frontend" / "nginx.conf").read_text(encoding="utf-8")
+
+    assert "location /api/" in nginx_config
+    assert "proxy_pass http://backend:8000/api/" in nginx_config
+    assert "try_files $uri $uri/ /index.html;" in nginx_config
+
+
+def test_docker_compose_starts_frontend_by_default():
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert 'profiles: ["docker-frontend"]' not in compose
+    assert 'context: ./frontend' in compose
+    assert '- "5173:80"' in compose
+    assert "VITE_API_PROXY_TARGET" not in compose

@@ -10,7 +10,7 @@
 ├── .env.example                      环境样例：前后端地址（Step 0.3）、LLM 超时（Backend Agent Debug）
 ├── .gitignore                        忽略规则：依赖排除（Step 0.1）、缓存排除（Step 0.1）
 ├── .dockerignore                     镜像忽略：pycache 排除（Agent Step 1.25）、依赖排除（Agent Step 1.25）
-├── docker-compose.yml                本地编排：基础服务（Step 1.1）、LLM 超时（Backend Agent Debug）
+├── docker-compose.yml                本地编排：基础服务（Step 1.1）、默认全栈启动（Step 1.1）
 ├── examples/                         示例产物：seed bundle 来源（Step 10）、封面与运行文件（Step 10）
 ├── agent/                            Agent 原型层：独立调试（Agent Prototype Step 1）、LangGraph 流程（Agent Prototype Step 1）
 │   ├── README.md                     原型说明：本地命令（Agent Prototype Step 1）、运行边界（Agent Prototype Step 1）
@@ -215,7 +215,8 @@
 │       ├── test_storage.py           存储测试：对象路径（Step 2）、对象复制（Backend Artifact Storage）、中文文件名兜底（Backend Upload Filename）
 │       └── test_uploads.py           上传测试：presign 接口（Step 3）、complete 落库（Step 3）
 ├── frontend/                         前端层：SPA 边界（Step 0.2）、构建边界（Step 0.2）
-│   ├── Dockerfile                    前端镜像：依赖安装（Step 1.1）、Vite 启动（Step 1.1）、可选容器开发（Frontend Step 3.4）
+│   ├── Dockerfile                    前端镜像：静态构建（Step 1.1）、Nginx 托管（Step 1.1）
+│   ├── nginx.conf                    前端网关：API 反向代理（Step 1.1）、SPA 路由兜底（Step 1.1）
 │   ├── .dockerignore                 构建忽略：依赖排除（Step 1.1）、产物排除（Step 1.1）
 │   ├── package.json                  包配置：脚本定义（Step 8.1）、Agent 进度校验（Frontend Step 6.9）
 │   ├── package-lock.json             依赖锁定：版本固定（Step 8.1）
