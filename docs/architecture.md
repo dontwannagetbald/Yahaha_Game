@@ -94,7 +94,7 @@
 │   │   │   ├── fixtures/             子图样本：confirmed session（Agent Step 2）
 │   │   │   ├── orchestrator/         编排节点：并发契约（Agent Step 3）
 │   │   │   │   ├── __init__.py       包标记：Orchestrator 导出（Agent Step 3）
-│   │   │   │   ├── planner.py        规划器：背景/人物合同（Agent Step 7）、独立封面合同（Agent Step 7）、子 Agent brief（Agent Step 7）
+│   │   │   │   ├── planner.py        规划器：背景/人物合同（Agent Step 7）、上传背景保留（Backend Asset Debug）、子 Agent brief（Agent Step 7）
 │   │   │   │   ├── demo.py           演示入口：Orchestrator 三图 smoke（Agent Step 3）
 │   │   │   │   └── build_parallel_contracts/ 节点目录：并发契约节点（Agent Step 3）
 │   │   │   │       ├── __init__.py   节点导出：build_parallel_contracts（Agent Step 3）
@@ -105,7 +105,7 @@
 │   │   │   │   ├── prompt_builder.py Prompt 构建：背景/玩家 prompt（Agent Step 4）、独立封面 prompt（Agent Step 7）
 │   │   │   │   ├── run_asset_agent/  节点目录：素材生成节点（Agent Step 4）
 │   │   │   │   │   ├── __init__.py   节点导出：run_asset_agent（Agent Step 4）
-│   │   │   │   │   └── node.py       节点实现：背景/人物落盘（Agent Step 7）、独立封面生成（Agent Step 7）、上传图 refine（Agent Step 7）
+│   │   │   │   │   └── node.py       节点实现：背景/人物落盘（Agent Step 7）、素材并发（Backend Asset Parallel）
 │   │   │   │   └── tools/            素材工具：PNG 编码（Agent Step 4）、品红抠图（Agent Step 4）、图像模型（Agent Step 4）
 │   │   │   │       ├── __init__.py   包标记：工具导入（Agent Step 4）
 │   │   │   │       ├── image_model.py 图像模型：图片生成（Agent Step 4）、图片编辑（Agent Step 7）
@@ -148,12 +148,12 @@
 │           ├── test_design_planner.py 设计测试：LLM patch 合并（Agent Step 1.13）、追问防出卡（Agent Step 1.42）
 │           ├── test_design_tone.py   语气测试：单 icon（Agent Step 1.17）、模型追问包装（Agent Step 1.41）
 │           ├── test_fixtures.py      fixture 测试：事件覆盖（Agent Step 1.11）、敏感信息（Agent Step 1.11）
-│           ├── test_asset_agent.py  Asset 测试：背景/人物落盘（Agent Step 7）、独立封面生成（Agent Step 7）、上传图 refine（Agent Step 7）
+│           ├── test_asset_agent.py  Asset 测试：背景/人物落盘（Agent Step 7）、素材并发（Backend Asset Parallel）
 │           ├── test_coding_agent.py Coding 测试：落盘边界（Agent Step 5）、截断重试（Backend Agent Debug）
 │           ├── test_coding_debug.py Coding 测试：运行时修复（Agent Step 6）、验收返修（Backend Agent Repair）
 │           ├── test_generation_provider.py Provider 测试：阶段 B smoke（Agent Step 2）、Coding 模型（Backend Agent Debug）
 │           ├── test_image_model.py  图片模型测试：生成 payload（Agent Step 4）、编辑 payload（Agent Step 7）
-│           ├── test_generation_orchestrator.py Orchestrator 测试：契约对齐（Agent Step 3）、背景/人物决策（Agent Step 7）
+│           ├── test_generation_orchestrator.py Orchestrator 测试：契约对齐（Agent Step 3）、上传背景保留（Backend Asset Debug）
 │           ├── test_generation_demo.py 生成演示测试：输出摘要（Agent Step 7）、双分支产物（Agent Step 7）
 │           ├── test_generation_state.py 状态测试：阶段 B state（Agent Step 2）、返修计数（Backend Agent Repair）
 │           ├── test_llm_provider.py  Provider 测试：响应解析（Agent Step 1.27）、length 解析（Backend Agent Debug）
@@ -169,25 +169,25 @@
 ├── backend/                          后端层：API 边界（Step 0.2）、测试边界（Step 0.2）
 │   ├── Dockerfile                    后端镜像：依赖安装（Step 1.1）、自动 seed 启动（Step 10）、Node runtime（Backend Agent Debug）
 │   ├── .dockerignore                 构建忽略：缓存排除（Step 1.1）、镜像瘦身（Step 1.1）
-│   ├── requirements.txt              依赖清单：FastAPI 依赖（Step 2.1）、迁移依赖（Step 2.2）、Auth 测试依赖（Step 3）
+│   ├── requirements.txt              依赖清单：FastAPI 依赖（Step 2.1）、Pillow 图片处理（Backend Pillow Runtime）
 │   ├── pytest.ini                    测试配置：导入路径（Step 2.1）
 │   ├── alembic.ini                   迁移配置：脚本定位（Step 2.2）、连接配置（Step 2.2）
 │   ├── app/                          应用包：代码边界（Step 0.2）
 │   │   ├── __init__.py               包标记：模块导入（Step 0.2）
 │   │   ├── auth.py                   认证路由：邮箱登录注册（Step 3）、注册头像上传（Frontend Step 3.4）、可选鉴权（Step 4）、游客识别（Step 6）
-│   │   ├── agent_runner.py           执行器边界：会话快照输入（Step 8.10）、final state 日志（Backend Agent Debug）、上传本地路径（Backend Upload Assets）
+│   │   ├── agent_runner.py           执行器边界：会话快照输入（Step 8.10）、封面路径保留（Backend Asset Debug）
 │   │   ├── config.py                 配置读取：根目录 .env（Step 3）、Agent runner 开关（Backend Agent Step 3）
 │   │   ├── db.py                     数据库层：异步引擎（Step 2.2）、会话依赖（Step 2.2）
-│   │   ├── main.py                   API 入口：健康检查（Step 2.1）、Create Sessions 挂载（Step 7.6）、Swagger 文档（Step 2.5）
+│   │   ├── main.py                   API 入口：健康检查（Step 2.1）、Create Sessions 挂载（Step 7.6）、任务恢复（Backend Job Recovery）
 │   │   ├── models.py                 数据模型：认证表（Step 2.3）、validation report（Backend Agent Debug）
 │   │   ├── schemas.py                API schema：Auth 响应（Step 3）、注册头像 schema（Frontend Step 3.4）、Uploads 响应（Step 3）
 │   │   ├── conversation_runner.py    Agent 桥接：lan_agents 图调用（Backend Agent Step 1）、状态归一（Backend Agent Step 1）
-│   │   ├── create_sessions.py        会话路由：创建会话（Step 7.6）、历史入图（Agent Step 1.29）、结构化错误透传（Backend Agent Debug）
-│   │   ├── games.py                  游戏路由：列表筛选（Step 4）、发布复制（Backend Artifact Storage）
-│   │   ├── jobs.py                   任务路由：会话创建任务（Step 8.4）、历史任务删除（Step 8.5）、任务封面透传（Frontend Step 6.11）、上传素材本地化（Backend Upload Assets）
+│   │   ├── create_sessions.py        会话路由：创建会话（Step 7.6）、卡片原地更新（Create Regenerate Card）、确认不追加卡片（Create Confirm Card）
+│   │   ├── games.py                  游戏路由：列表筛选（Step 4）、标签归一（Backend Home Filter）
+│   │   ├── jobs.py                   任务路由：会话创建任务（Step 8.4）、历史任务删除（Step 8.5）、重启恢复（Backend Job Recovery）
 │   │   ├── play_events.py            事件路由：游客上报（Step 6）、计数规则（Step 6）、元数据脱敏（Step 6）
 │   │   ├── seed.py                   种子服务：examples bundle 导入（Step 10）、published 写入（Step 10）
-│   │   ├── storage.py                存储服务：对象路径（Step 2）、对象复制（Backend Artifact Storage）
+│   │   ├── storage.py                存储服务：对象路径（Step 2）、对象复制（Backend Artifact Storage）、中文文件名兜底（Backend Upload Filename）
 │   │   ├── uploads.py                上传路由：presign 接口（Step 3）、complete 接口（Step 3）
 │   │   └── security.py               安全工具：密码哈希与校验（Step 3）
 │   ├── migrations/                   迁移层：迁移环境（Step 2.2）、版本目录（Step 2.2）
@@ -202,17 +202,17 @@
 │   └── tests/                        测试层：后端测试（Step 0.2）
 │       ├── test_auth.py              认证测试：邮箱登录注册（Step 3）、注册头像上传（Frontend Step 3.4）、Google OAuth 回跳（Step 3）
 │       ├── test_agent_runner.py      执行器测试：快照输入（Step 8.9）、draft 上传（Backend Artifact Storage）、上传 local_path 回归（Backend Upload Assets）
-│       ├── test_config.py            配置测试：根目录 .env（Step 3）、runner 配置（Backend Agent Step 3）、Docker runtime（Backend Agent Debug）
+│       ├── test_config.py            配置测试：根目录 .env（Step 3）、Pillow 依赖（Backend Pillow Runtime）
 │       ├── test_health.py            健康测试：接口断言（Step 2.1）、就绪断言（Step 2.2）
 │       ├── test_migrations.py        迁移测试：Create 会话断言（Step 7.1）、validation report 断言（Backend Agent Debug）
-│       ├── test_create_sessions.py   会话测试：消息历史（Step 7.23）、历史入图（Agent Step 1.29）
-│       ├── test_games.py             游戏测试：公开列表（Step 4）、详情权限（Step 4）
+│       ├── test_create_sessions.py   会话测试：消息历史（Step 7.23）、卡片原地更新（Create Regenerate Card）、确认不追加卡片（Create Confirm Card）
+│       ├── test_games.py             游戏测试：公开列表（Step 4）、标签归一（Backend Home Filter）
 │       ├── test_likes.py             点赞测试：登录保护（Step 5）、幂等计数（Step 5）
-│       ├── test_jobs.py              任务测试：会话创建任务（Step 8.3）、删除权限（Step 8.5）、封面字段回归（Frontend Step 6.11）
+│       ├── test_jobs.py              任务测试：会话创建任务（Step 8.3）、删除权限（Step 8.5）、重启恢复（Backend Job Recovery）
 │       ├── test_play_events.py       事件测试：游客上报（Step 6）、脱敏规则（Step 6）
 │       ├── test_publish.py           发布测试：发布权限（Step 9.1）、发布复制（Backend Artifact Storage）
 │       ├── test_seed.py              种子测试：published 幂等（Step 10）、bundle 契约（Step 10）
-│       ├── test_storage.py           存储测试：对象路径（Step 2）、对象复制（Backend Artifact Storage）
+│       ├── test_storage.py           存储测试：对象路径（Step 2）、对象复制（Backend Artifact Storage）、中文文件名兜底（Backend Upload Filename）
 │       └── test_uploads.py           上传测试：presign 接口（Step 3）、complete 落库（Step 3）
 ├── frontend/                         前端层：SPA 边界（Step 0.2）、构建边界（Step 0.2）
 │   ├── Dockerfile                    前端镜像：依赖安装（Step 1.1）、Vite 启动（Step 1.1）、可选容器开发（Frontend Step 3.4）
@@ -249,7 +249,7 @@
 │   │   ├── pages/                    前端页面：路由页面（Frontend Step 3.4）、页面样式（Frontend Step 3.4）
 │   │   │   ├── HomePage.tsx          首页页面：Games 查询（Frontend Step 4）、点赞入口（Frontend Step 4）、刷新防闪（Frontend Home Flash）
 │   │   │   ├── home.css              首页样式：官网式首屏（Frontend Step 3.4）、筛选下划线（Frontend Step 3.4）、搜索空态样式（Frontend Step 3.4）、卡片点赞覆盖层（Frontend Step 4）
-│   │   │   ├── CreatePage.tsx        创建页：任务工作台（Frontend Step 3.4）、卡片锚定（Frontend Revision Card Anchor）、任务 loading 保留（Frontend Create Flash）
+│   │   │   ├── CreatePage.tsx        创建页：任务工作台（Frontend Step 3.4）、卡片折叠（Create Regenerate Card）
 │   │   │   ├── create.css            创建页样式：工作台布局（Frontend Step 3.4）、任务删除样式（Frontend Step 6.10）、封面可见性（Frontend Step 6.11）、预览防遮挡（Frontend Preview Layout）
 │   │   │   ├── PlayPage.tsx          游玩页：无导航布局（Frontend Step 3.4）、点赞与同类流（Frontend Step 3.4）、Games 点赞同步（Frontend Step 4）、manifest/iframe 运行链路（Frontend Step 5）、事件上报与重试（Frontend Step 5）
 │   │   │   └── play.css              游玩页样式：满屏自适应（Frontend Step 3.4）、舞台贴屏布局（Frontend Step 3.4）、Play 独立背景（Frontend Step 3.4）、封面进度条蒙版（Frontend Step 3.4）、运行失败态与 iframe（Frontend Step 5）
@@ -272,7 +272,7 @@
 │       ├── check-create-layout.mjs   Create 检查：单侧栏折叠任务区（Frontend Step 3.4）、日志面板（Frontend Step 6.8）、封面入口（Frontend Step 6.11）、移除右侧重做（Frontend Step 6.12）
 │       ├── check-create-session-state.mjs Create 检查：任务会话状态（Frontend Step 6.2）、auth 缓存兼容（Frontend Auth Flash）
 │       ├── check-validation-report-error.mjs Create 检查：validation report 弹窗（Backend Agent Debug）
-│       ├── check-create-chat-event.mjs Create 检查：聊天发送（Frontend Step 6.3）、附件气泡展示（Frontend Upload Send）、卡片锚定（Frontend Revision Card Anchor）
+│       ├── check-create-chat-event.mjs Create 检查：聊天发送（Frontend Step 6.3）、卡片折叠（Create Regenerate Card）
 │       ├── check-create-tasks.mjs   Create 检查：任务历史（Frontend Step 6.2）、任务刷新保留（Frontend Create Flash）
 │       ├── check-create-confirm-card.mjs Create 检查：确认卡片（Frontend Step 6.5）、确认后隐藏按钮（Frontend Step 6.12）、卡片锚定（Frontend Revision Card Anchor）
 │       ├── check-create-upload-assets.mjs Create 检查：上传绑定（Frontend Step 6.4）、上传气泡过滤（Frontend Step 6.4）、附件芯片隐藏（Frontend Upload Send）

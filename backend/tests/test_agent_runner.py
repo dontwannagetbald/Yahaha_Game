@@ -259,10 +259,10 @@ class FakeGenerationGraph:
                 "output": {
                     "status": "succeeded",
                     "generation_status": "succeeded",
-                    "artifact_workspace": "output/drafts/test-user/test-job/v1",
+                    "artifact_workspace": "/app/output/drafts/test-user/test-job/v1",
                     "artifact_result": {
-                        "workspace": "output/drafts/test-user/test-job/v1",
-                        "manifest_path": "output/drafts/test-user/test-job/v1/manifest.json",
+                        "workspace": "/app/output/drafts/test-user/test-job/v1",
+                        "manifest_path": "/app/output/drafts/test-user/test-job/v1/manifest.json",
                         "cover_path": "assets/cover.png",
                     },
                     "draft_game_meta": {
@@ -455,6 +455,7 @@ async def test_langgraph_runner_emits_node_start_and_end_logs():
     assert isinstance(result, AgentRunSuccess)
     assert result.title == "Dungeon Crawl"
     assert result.manifest_url.endswith("/manifest.json")
+    assert result.cover_url == "/app/output/drafts/test-user/test-job/v1/assets/cover.png"
     assert [
         (log.step, log.level, log.message)
         for log in logs

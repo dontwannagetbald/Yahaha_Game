@@ -274,6 +274,92 @@ def test_orchestrator_uses_uploaded_image_and_video_only_for_background_player_a
     assert decisions_by_target["player"]["mode"] == "uploaded_reference"
 
 
+def test_orchestrator_preserves_uploaded_background_when_llm_only_requests_player_revision() -> None:
+    response = _three_asset_response()
+    response["asset_manifest_plan"] = [
+        _player_manifest(source="generated"),
+        _cover_manifest(),
+    ]
+    response["development_brief"] = _base_development_brief([PLAYER_PATH, COVER_PATH])
+    response["asset_work_order"] = {
+        "asset_decisions": [
+            {
+                "target": "background",
+                "target_path": BACKGROUND_PATH,
+                "mode": "code_generated",
+                "source_asset_id": "",
+                "rationale": "Only the character is being revised.",
+            },
+            {
+                "target": "player",
+                "target_path": PLAYER_PATH,
+                "mode": "asset_agent_generate",
+                "source_asset_id": "",
+                "rationale": "Generate a new player sprite for the revision.",
+            },
+        ],
+        "uploaded_asset_tasks": [],
+        "generated_asset_tasks": [
+            {
+                "key": "asset-player",
+                "target_path": PLAYER_PATH,
+                "usage": "player character sprite",
+                "generation_mode": "illustrate_character_transparent_background",
+                "required": True,
+            },
+            {
+                "key": "asset-cover",
+                "target_path": COVER_PATH,
+                "usage": "independent display cover based on game content and style",
+                "generation_mode": "illustrate_independent_cover_art",
+                "required": True,
+            },
+        ],
+    }
+    fixture = _load_generation_fixture()
+    fixture["uploaded_assets"] = [
+        {
+            "asset_id": "asset-flower-background",
+            "filename": "background.jpg",
+            "mime_type": "image/jpeg",
+            "local_path": "fixtures/uploads/background.jpg",
+            "user_hint": "",
+        }
+    ]
+    fixture["material_usage"] = {
+        "assets": [
+            {
+                "asset_id": "asset-flower-background",
+                "filename": "background.jpg",
+                "mime_type": "image/jpeg",
+                "intended_use": "background",
+                "usage_priority": "supporting",
+                "agent_note": "用户要求用这个做背景图片。",
+            }
+        ]
+    }
+    state = GenerationState(**fixture)
+
+    update = OrchestratorPlanner(provider=MockLLMProvider(response=response)).plan(state)
+    manifest = _manifest_by_path(update)
+    uploaded_tasks = {
+        item["target_path"]: item
+        for item in update["asset_work_order"]["uploaded_asset_tasks"]
+    }
+    decisions_by_target = {
+        item["target"]: item for item in update["asset_work_order"]["asset_decisions"]
+    }
+
+    assert set(manifest) == {BACKGROUND_PATH, PLAYER_PATH, COVER_PATH}
+    assert manifest[BACKGROUND_PATH]["source"] == "uploaded"
+    assert uploaded_tasks[BACKGROUND_PATH]["source_asset_id"] == "asset-flower-background"
+    assert decisions_by_target["background"]["mode"] == "uploaded_reference"
+    assert update["coding_agent_brief"]["runtime_asset_paths"] == [
+        BACKGROUND_PATH,
+        PLAYER_PATH,
+    ]
+
+
 def test_orchestrator_passes_only_non_visual_files_as_model_references(
     tmp_path: Path,
 ) -> None:

@@ -80,6 +80,26 @@ def test_object_key_builders_strip_path_traversal_segments():
     assert object_key.endswith("/my-poster.png")
 
 
+def test_upload_object_key_falls_back_for_non_ascii_filename():
+    from app.storage import ObjectStorageService
+
+    service = ObjectStorageService(build_settings())
+
+    user_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    upload_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
+
+    object_key = service.build_upload_object_key(
+        user_id=user_id,
+        upload_id=upload_id,
+        filename="小镇图.jpg",
+    )
+
+    assert object_key == (
+        "uploads/11111111-1111-1111-1111-111111111111/"
+        "22222222-2222-2222-2222-222222222222/upload.jpg"
+    )
+
+
 def test_private_prefixes_return_presigned_urls_without_full_signature_assertions():
     from app.storage import ObjectStorageService
 

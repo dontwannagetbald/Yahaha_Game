@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "1.0",
+  "title": "小花仙的花瓣收集换装之旅",
+  "description": "这是一款以用户上传背景图为场景的小花仙轻松游戏，玩家操控小花仙自己，通过点击收集花瓣、拖动完成换装来推进进度。没有失败惩罚，集齐指定花瓣即可通关，整体难度简单、节奏舒缓。",
+  "entry": "index.html",
+  "styles": [
+    "style.css"
+  ],
+  "scripts": [
+    "game.js"
+  ],
+  "assets": [
+    "assets/background.png",
+    "assets/player.png"
+  ],
+  "cover": "assets/cover.png",
+  "controls": [
+    "['点击花瓣收集', '拖动服装/装饰到小花仙身上']"
+  ],
+  "runtime": "html5-iframe",
+  "generatedAt": "2026-06-22T01:28:01.308373Z"
+}

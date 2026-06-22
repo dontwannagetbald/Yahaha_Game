@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from agent.generation_graph.asset_agent.prompt_builder import build_asset_prompts
 from agent.generation_graph.asset_agent.tools.image_model import (
@@ -44,10 +45,11 @@ def run_asset_agent(
     active_image_client = image_client if image_client is not None else image_client_from_env()
     image_config = ImageGenerationConfig.from_env()
 
-    processed_assets = []
-    asset_analysis = []
+    asset_jobs: list[
+        tuple[str, Callable[[], tuple[dict[str, Any], dict[str, Any]]]]
+    ] = []
 
-    if BACKGROUND_PATH in manifest_paths:
+    def generate_background_asset() -> tuple[dict[str, Any], dict[str, Any]]:
         background_path = resolve_workspace_path(workspace_root, BACKGROUND_PATH)
         background_reference = _uploaded_reference_for_target(state, BACKGROUND_PATH)
         if background_reference and active_image_client:
@@ -78,7 +80,7 @@ def run_asset_agent(
             write_mock_background(background_path)
             background_source = "mock"
             background_source_asset_id = ""
-        processed_assets.append(
+        return (
             _processed_asset(
                 target_path=BACKGROUND_PATH,
                 absolute_path=background_path,
@@ -90,9 +92,7 @@ def run_asset_agent(
                 transparent_background=False,
                 source=background_source,
                 source_asset_id=background_source_asset_id,
-            )
-        )
-        asset_analysis.append(
+            ),
             {
                 "asset_id": "background",
                 "target_path": BACKGROUND_PATH,
@@ -102,10 +102,10 @@ def run_asset_agent(
                     else "Generated 1280x720 gameplay background from Asset Agent prompts."
                 ),
                 "blocking": False,
-            }
+            },
         )
 
-    if PLAYER_PATH in manifest_paths:
+    def generate_player_asset() -> tuple[dict[str, Any], dict[str, Any]]:
         player_raw_path = resolve_workspace_path(workspace_root, PLAYER_RAW_PATH)
         player_path = resolve_workspace_path(workspace_root, PLAYER_PATH)
         player_reference = _uploaded_reference_for_target(state, PLAYER_PATH)
@@ -140,7 +140,7 @@ def run_asset_agent(
             write_chroma_keyed_player(player_path)
             player_source = "mock"
             player_source_asset_id = ""
-        processed_assets.append(
+        return (
             _processed_asset(
                 target_path=PLAYER_PATH,
                 absolute_path=player_path,
@@ -152,9 +152,7 @@ def run_asset_agent(
                 transparent_background=True,
                 source=player_source,
                 source_asset_id=player_source_asset_id,
-            )
-        )
-        asset_analysis.append(
+            ),
             {
                 "asset_id": "player",
                 "target_path": PLAYER_PATH,
@@ -164,10 +162,10 @@ def run_asset_agent(
                     else "Generated 1024x1024 magenta-matte source and exported 256x256 RGBA player sprite."
                 ),
                 "blocking": False,
-            }
+            },
         )
 
-    if COVER_PATH in manifest_paths:
+    def generate_cover_asset() -> tuple[dict[str, Any], dict[str, Any]]:
         cover_path = resolve_workspace_path(workspace_root, COVER_PATH)
         if active_image_client:
             active_image_client.generate_png(
@@ -179,7 +177,7 @@ def run_asset_agent(
         else:
             write_mock_cover(cover_path)
             cover_source = "mock"
-        processed_assets.append(
+        return (
             _processed_asset(
                 target_path=COVER_PATH,
                 absolute_path=cover_path,
@@ -191,16 +189,40 @@ def run_asset_agent(
                 transparent_background=False,
                 source=cover_source,
                 source_asset_id="",
-            )
-        )
-        asset_analysis.append(
+            ),
             {
                 "asset_id": "cover",
                 "target_path": COVER_PATH,
                 "summary": "Generated independent 1280x720 display cover art from game content and style.",
                 "blocking": False,
-            }
+            },
         )
+
+    if BACKGROUND_PATH in manifest_paths:
+        asset_jobs.append(("background", generate_background_asset))
+    if PLAYER_PATH in manifest_paths:
+        asset_jobs.append(("player", generate_player_asset))
+    if COVER_PATH in manifest_paths:
+        asset_jobs.append(("cover", generate_cover_asset))
+
+    processed_by_name: dict[str, dict[str, Any]] = {}
+    analysis_by_name: dict[str, dict[str, Any]] = {}
+    if len(asset_jobs) <= 1:
+        for name, job in asset_jobs:
+            processed_asset, analysis = job()
+            processed_by_name[name] = processed_asset
+            analysis_by_name[name] = analysis
+    else:
+        with ThreadPoolExecutor(max_workers=min(3, len(asset_jobs))) as executor:
+            futures = {executor.submit(job): name for name, job in asset_jobs}
+            for future, name in futures.items():
+                processed_asset, analysis = future.result()
+                processed_by_name[name] = processed_asset
+                analysis_by_name[name] = analysis
+
+    ordered_names = [name for name, _job in asset_jobs]
+    processed_assets = [processed_by_name[name] for name in ordered_names]
+    asset_analysis = [analysis_by_name[name] for name in ordered_names]
 
     return {
         "processed_assets": processed_assets,

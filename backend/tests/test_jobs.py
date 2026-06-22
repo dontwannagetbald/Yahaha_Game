@@ -137,6 +137,58 @@ def create_confirmed_session(
     return str(create_session_id)
 
 
+def test_recover_interrupted_jobs_marks_pending_and_running_failed(session_factory):
+    async def exercise() -> None:
+        async with session_factory() as session:
+            owner = User(email="owner@example.com", password_hash="hash")
+            session.add(owner)
+            await session.flush()
+            running_job = GenerationJob(
+                user_id=owner.user_id,
+                prompt="running prompt",
+                confirmation={"title": "Running"},
+                status="running",
+                started_at=datetime.now(timezone.utc) - timedelta(minutes=5),
+                created_at=datetime.now(timezone.utc) - timedelta(minutes=6),
+            )
+            pending_job = GenerationJob(
+                user_id=owner.user_id,
+                prompt="pending prompt",
+                confirmation={"title": "Pending"},
+                status="pending",
+                created_at=datetime.now(timezone.utc) - timedelta(minutes=4),
+            )
+            succeeded_job = GenerationJob(
+                user_id=owner.user_id,
+                prompt="succeeded prompt",
+                confirmation={"title": "Succeeded"},
+                status="succeeded",
+                created_at=datetime.now(timezone.utc),
+                finished_at=datetime.now(timezone.utc),
+            )
+            session.add_all([running_job, pending_job, succeeded_job])
+            await session.commit()
+
+            recovered = await jobs_module.recover_interrupted_jobs(session_factory)
+
+            assert recovered == 2
+            await session.refresh(running_job)
+            await session.refresh(pending_job)
+            await session.refresh(succeeded_job)
+            assert running_job.status == "failed"
+            assert pending_job.status == "failed"
+            assert succeeded_job.status == "succeeded"
+            assert running_job.finished_at is not None
+            assert pending_job.finished_at is not None
+            assert "服务重启" in str(running_job.error_message)
+            assert "服务重启" in str(pending_job.error_message)
+            logs = (await session.execute(select(AgentLog))).scalars().all()
+            assert {log.job_id for log in logs} == {running_job.id, pending_job.id}
+            assert all(log.step == "agent_runner" for log in logs)
+
+    asyncio.run(exercise())
+
+
 def test_create_requires_login(client: TestClient):
     response = client.post(
         "/api/jobs",

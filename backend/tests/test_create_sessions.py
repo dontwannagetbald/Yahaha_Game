@@ -633,7 +633,7 @@ def test_non_chat_events_append_reviewable_session_messages(
     assert "upload_assets" in event_types
     assert "regenerate" in event_types
     assert "confirm" in event_types
-    assert event_types[-1] == "assistant_response"
+    assert event_types[-1] == "confirm"
     assert_messages_are_ordered(messages)
 
 
@@ -665,6 +665,38 @@ def test_regenerate_preserves_requirements_and_material_usage(client: TestClient
     assert_card_is_projection(after["assistant_response"]["card"], after["game_plan"])
 
 
+def test_regenerate_replaces_existing_card_message_instead_of_appending(
+    client: TestClient,
+):
+    login(client, "creator@example.com")
+    created = client.post(
+        "/api/create-sessions",
+        json={"initial_message": "做一个花仙子养成游戏"},
+    )
+    before = created.json()
+    first_card_message = next(
+        message
+        for message in before["messages"]
+        if message["payload"].get("card") is not None
+    )
+
+    response = client.post(
+        f"/api/create-sessions/{before['session_id']}/events",
+        json={"type": "regenerate", "selected_plan_id": before["game_plan"]["plan_id"]},
+    )
+
+    assert response.status_code == 200
+    after = response.json()
+    card_messages = [
+        message for message in after["messages"] if message["payload"].get("card") is not None
+    ]
+    assert len(card_messages) == 1
+    assert card_messages[0]["id"] == first_card_message["id"]
+    assert card_messages[0]["payload"]["card"] == after["assistant_response"]["card"]
+    assert card_messages[0]["content"] == after["assistant_response"]["message"]
+    assert after["assistant_response"]["card"]["plan_id"] != before["assistant_response"]["card"]["plan_id"]
+
+
 def test_confirm_marks_session_without_creating_generation_job(
     client: TestClient, session_factory, monkeypatch: pytest.MonkeyPatch
 ):
@@ -692,6 +724,11 @@ def test_confirm_marks_session_without_creating_generation_job(
     body = response.json()
     assert body["conversation_status"] == "confirmed"
     assert body["handoff_to_generation"] is True
+    card_messages = [
+        message for message in body["messages"] if message["payload"].get("card") is not None
+    ]
+    assert len(card_messages) == 1
+    assert card_messages[0]["payload"]["card"] == created.json()["assistant_response"]["card"]
 
     async def inspect() -> None:
         async with session_factory() as session:

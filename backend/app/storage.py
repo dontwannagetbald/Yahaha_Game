@@ -163,9 +163,11 @@ class ObjectStorageService:
 
     def _sanitize_filename(self, filename: str) -> str:
         name = PurePosixPath(filename).name.strip()
+        if not name or name in {".", ".."}:
+            raise StorageConfigurationError("Filename is empty after sanitization")
+
         raw_stem, raw_dot, raw_suffix = name.rpartition(".")
         base_name = raw_stem if raw_dot else raw_suffix
-        suffix = f".{raw_suffix}" if raw_dot else ""
 
         safe_base = re.sub(r"[^a-zA-Z0-9._-]+", "-", base_name)
         safe_base = re.sub(r"-{2,}", "-", safe_base).strip(".-").lower()
@@ -174,7 +176,10 @@ class ObjectStorageService:
         )
 
         if not safe_base:
-            raise StorageConfigurationError("Filename is empty after sanitization")
+            has_named_file = bool(base_name.strip(".- _"))
+            if not has_named_file:
+                raise StorageConfigurationError("Filename is empty after sanitization")
+            safe_base = "upload"
         if safe_suffix:
             return f"{safe_base}.{safe_suffix}"
         return safe_base

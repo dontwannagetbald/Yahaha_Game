@@ -83,6 +83,14 @@ def test_backend_dockerfile_installs_node_for_agent_runtime_validation():
     assert "nodejs" in dockerfile
 
 
+def test_backend_requirements_include_pillow_for_uploaded_image_processing():
+    requirements = (REPO_ROOT / "backend" / "requirements.txt").read_text(
+        encoding="utf-8"
+    )
+
+    assert "pillow" in requirements.lower()
+
+
 def test_backend_dockerfile_copies_examples_and_runs_seed_before_server_start():
     dockerfile = (REPO_ROOT / "backend" / "Dockerfile").read_text(encoding="utf-8")
 

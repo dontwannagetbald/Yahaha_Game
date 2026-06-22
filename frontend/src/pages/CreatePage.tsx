@@ -197,6 +197,7 @@ function buildRenderableMessages(messages: CreateSessionMessage[]): RenderableCo
   let pendingAttachments: MessageAttachmentItem[] = [];
   let pendingAttachmentMessageId: string | null = null;
   let pendingAttachmentCreatedAt: string | null = null;
+  let anchoredCardMessageIndex: number | null = null;
 
   for (const message of messages) {
     if (message.payload?.event_type === "upload_assets") {
@@ -210,11 +211,26 @@ function buildRenderableMessages(messages: CreateSessionMessage[]): RenderableCo
       continue;
     }
 
-    renderableMessages.push({
+    const card = getMessageCard(message);
+    const renderableMessage: RenderableConversationMessage = {
       ...message,
       attachments: message.role === "user" ? pendingAttachments : [],
-      card: getMessageCard(message),
-    });
+      card,
+    };
+
+    if (card && anchoredCardMessageIndex !== null) {
+      renderableMessages[anchoredCardMessageIndex] = {
+        ...renderableMessages[anchoredCardMessageIndex],
+        content: message.content,
+        payload: message.payload,
+        card,
+      };
+    } else {
+      renderableMessages.push(renderableMessage);
+      if (card) {
+        anchoredCardMessageIndex = renderableMessages.length - 1;
+      }
+    }
 
     if (message.role === "user") {
       pendingAttachments = [];

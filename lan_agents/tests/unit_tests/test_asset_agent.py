@@ -1,4 +1,6 @@
 from pathlib import Path
+import threading
+import time
 
 from agent.generation_graph.asset_agent.prompt_builder import build_asset_prompts
 from agent.generation_graph.asset_agent.run_asset_agent.node import run_asset_agent
@@ -48,6 +50,35 @@ class FakeImageClient:
             write_mock_background(output_path)
             return
         write_mock_player_raw(output_path)
+
+
+class OverlapDetectingImageClient(FakeImageClient):
+    def __init__(self, *, expected_calls: int) -> None:
+        super().__init__()
+        self.expected_calls = expected_calls
+        self.started_calls = 0
+        self.active_calls = 0
+        self.max_active_calls = 0
+        self._condition = threading.Condition()
+
+    def generate_png(self, *, prompt: str, size: str, output_path: Path) -> None:
+        with self._condition:
+            self.started_calls += 1
+            self.active_calls += 1
+            self.max_active_calls = max(self.max_active_calls, self.active_calls)
+            self._condition.notify_all()
+            deadline = time.monotonic() + 0.2
+            while (
+                self.started_calls < self.expected_calls
+                and time.monotonic() < deadline
+            ):
+                self._condition.wait(timeout=0.01)
+        try:
+            super().generate_png(prompt=prompt, size=size, output_path=output_path)
+        finally:
+            with self._condition:
+                self.active_calls -= 1
+                self._condition.notify_all()
 
 
 def _build_state(tmp_path: Path) -> GenerationState:
@@ -230,6 +261,18 @@ def test_run_asset_agent_calls_image_model_with_fixed_sizes(tmp_path: Path) -> N
     assert "Asset type: player character sprite" in calls_by_name["player_raw.png"]["prompt"]
     assert "Asset type: game cover art" in calls_by_name["cover.png"]["prompt"]
     assert (Path(state.artifact_workspace) / "assets" / "cover.png").exists()
+
+
+def test_run_asset_agent_generates_independent_images_concurrently(
+    tmp_path: Path,
+) -> None:
+    state = _build_state(tmp_path)
+    image_client = OverlapDetectingImageClient(expected_calls=3)
+
+    run_asset_agent(state, image_client=image_client)
+
+    assert image_client.started_calls == 3
+    assert image_client.max_active_calls >= 2
 
 
 def test_run_asset_agent_generates_independent_cover_even_without_runtime_assets(

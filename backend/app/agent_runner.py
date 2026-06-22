@@ -340,7 +340,9 @@ def _join_artifact_url(workspace: str, path: str) -> str:
         return path
     if workspace and path.startswith(workspace):
         return path
-    return "/".join([part.strip("/") for part in [workspace, path] if part])
+    if not workspace:
+        return path
+    return f"{workspace.rstrip('/')}/{path.lstrip('/')}"
 
 
 def _artifact_base_url(workspace: str) -> str:

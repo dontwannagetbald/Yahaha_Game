@@ -159,6 +159,9 @@ class OrchestratorPlanner:
             else fallback["asset_manifest_plan"]
         )
         manifest_plan = _normalize_manifest_plan(manifest_source)
+        manifest_plan = _preserve_uploaded_runtime_manifest_items(
+            manifest_plan, fallback["asset_manifest_plan"]
+        )
         manifest_paths = [item["target_path"] for item in manifest_plan]
         allowed_paths = set(manifest_paths)
         asset_work_order = _normalize_asset_work_order(
@@ -166,6 +169,10 @@ class OrchestratorPlanner:
             allowed_paths,
         )
         asset_work_order = _complete_asset_work_order(
+            asset_work_order,
+            fallback["asset_work_order"],
+        )
+        asset_work_order = _align_asset_decisions_with_uploaded_tasks(
             asset_work_order,
             fallback["asset_work_order"],
         )
@@ -515,6 +522,20 @@ def _merge_missing_mvp_manifest_items(
     return sorted(by_path.values(), key=lambda item: TARGET_PATH_ORDER[item["target_path"]])
 
 
+def _preserve_uploaded_runtime_manifest_items(
+    manifest_plan: list[dict[str, Any]], fallback_plan: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    by_path = {item["target_path"]: item for item in manifest_plan}
+    for fallback_item in fallback_plan:
+        target_path = fallback_item["target_path"]
+        if target_path not in {BACKGROUND_PATH, PLAYER_PATH}:
+            continue
+        if fallback_item.get("source") != "uploaded":
+            continue
+        by_path.setdefault(target_path, fallback_item)
+    return sorted(by_path.values(), key=lambda item: TARGET_PATH_ORDER[item["target_path"]])
+
+
 def _fallback_manifest_plan(state: GenerationState) -> list[dict[str, Any]]:
     background_asset = _select_background_source_asset(state)
     player_asset = _select_player_source_asset(state)
@@ -687,6 +708,53 @@ def _complete_asset_work_order(
         "asset_decisions": value.get("asset_decisions", []),
         "uploaded_asset_tasks": uploaded_tasks,
         "generated_asset_tasks": generated_tasks,
+    }
+
+
+def _align_asset_decisions_with_uploaded_tasks(
+    value: dict[str, Any], fallback: dict[str, Any]
+) -> dict[str, Any]:
+    uploaded_tasks_by_path = {
+        item["target_path"]: item
+        for item in value.get("uploaded_asset_tasks", [])
+        if isinstance(item, dict) and item.get("target_path")
+    }
+    fallback_decisions_by_path = {
+        item["target_path"]: item
+        for item in fallback.get("asset_decisions", [])
+        if isinstance(item, dict) and item.get("target_path")
+    }
+    decisions = []
+    for decision in value.get("asset_decisions", []):
+        if not isinstance(decision, dict):
+            continue
+        target_path = decision.get("target_path")
+        uploaded_task = uploaded_tasks_by_path.get(target_path)
+        if not uploaded_task:
+            decisions.append(decision)
+            continue
+        fallback_decision = fallback_decisions_by_path.get(target_path, {})
+        decisions.append(
+            {
+                "target": decision.get("target"),
+                "target_path": target_path,
+                "mode": "uploaded_reference",
+                "source_asset_id": str(
+                    fallback_decision.get("source_asset_id")
+                    or uploaded_task.get("source_asset_id")
+                    or uploaded_task.get("asset_id")
+                    or ""
+                ),
+                "rationale": str(
+                    fallback_decision.get("rationale")
+                    or "Preserved uploaded runtime asset from material usage."
+                ),
+            }
+        )
+    return {
+        "asset_decisions": decisions,
+        "uploaded_asset_tasks": value.get("uploaded_asset_tasks", []),
+        "generated_asset_tasks": value.get("generated_asset_tasks", []),
     }
 
 
@@ -1203,10 +1271,20 @@ def _select_player_source_asset(state: GenerationState) -> dict[str, Any] | None
             continue
         usage = usage_map.get(str(asset.get("asset_id") or ""))
         text = _asset_context_text(asset, usage)
+        has_player_signal = any(
+            keyword in text
+            for keyword in ("character", "player", "hero", "主角", "小猫", "cat")
+        )
+        has_background_signal = any(
+            keyword in text
+            for keyword in ("background", "scene", "forest", "landscape", "背景", "森林", "氛围")
+        )
+        if has_background_signal and not has_player_signal:
+            continue
         score = 10
         if "must_use" in text:
             score += 50
-        if any(keyword in text for keyword in ("character", "player", "hero", "主角", "小猫", "cat")):
+        if has_player_signal:
             score += 100
         if score > best_score:
             best_score = score

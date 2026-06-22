@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "title": "小镇物语：职业日常",
+  "description": "《小镇物语：职业日常》是一款以可爱小镇背景展开的轻松模拟经营游戏，玩家将扮演可在店员、医生、厨师等职业间自由切换的主角，体验不同岗位的日常任务与成长过程。游戏通过点击选择地点、人物和行动，并配合拖拽整理装饰与物品来推进职业晋升和小镇委托，没有失败压力，整体风格休闲简单。",
+  "entry": "index.html",
+  "styles": [
+    "style.css"
+  ],
+  "scripts": [
+    "game.js"
+  ],
+  "assets": [
+    "assets/background.png"
+  ],
+  "cover": "assets/cover.png",
+  "controls": [
+    "['点击选择地点、人物和行动', '拖拽整理装饰与物品']"
+  ],
+  "runtime": "html5-iframe",
+  "generatedAt": "2026-06-22T01:55:26.877080Z"
+}

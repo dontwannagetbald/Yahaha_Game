@@ -14,13 +14,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models import Game, User
 
 
-SEED_AUTHOR_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+SEED_PLATFORM_AUTHOR_ID = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+SEED_USER_AUTHOR_ID = uuid.UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 
 
 @dataclass(frozen=True)
 class SeedGameDefinition:
     game_id: uuid.UUID
     bundle_id: str
+    owner_user_id: uuid.UUID
+    owner_email: str
+    owner_display_name: str
     tags: list[str]
     play_count: int
     like_count: int
@@ -31,6 +35,9 @@ SEED_GAME_DEFINITIONS: Sequence[SeedGameDefinition] = (
     SeedGameDefinition(
         game_id=uuid.UUID("0274de1c-54b5-4e22-8930-71979217717d"),
         bundle_id="0274de1c-54b5-4e22-8930-71979217717d",
+        owner_user_id=SEED_PLATFORM_AUTHOR_ID,
+        owner_email="seed-author@example.com",
+        owner_display_name="Yahaha Seeds",
         tags=["解谜", "冒险"],
         play_count=19,
         like_count=0,
@@ -39,6 +46,9 @@ SEED_GAME_DEFINITIONS: Sequence[SeedGameDefinition] = (
     SeedGameDefinition(
         game_id=uuid.UUID("0b7be5ff-bf91-465d-87bb-e3aa8a916606"),
         bundle_id="0b7be5ff-bf91-465d-87bb-e3aa8a916606",
+        owner_user_id=SEED_PLATFORM_AUTHOR_ID,
+        owner_email="seed-author@example.com",
+        owner_display_name="Yahaha Seeds",
         tags=["冒险", "动作"],
         play_count=9,
         like_count=1,
@@ -47,19 +57,44 @@ SEED_GAME_DEFINITIONS: Sequence[SeedGameDefinition] = (
     SeedGameDefinition(
         game_id=uuid.UUID("4b258dae-ed4d-4653-95f1-0c20ca80893e"),
         bundle_id="4b258dae-ed4d-4653-95f1-0c20ca80893e",
+        owner_user_id=SEED_PLATFORM_AUTHOR_ID,
+        owner_email="seed-author@example.com",
+        owner_display_name="Yahaha Seeds",
         tags=["休闲"],
         play_count=13,
         like_count=1,
         published_days_ago=1,
     ),
+    SeedGameDefinition(
+        game_id=uuid.UUID("08349435-cfa3-4dce-8dda-de7acf08634b"),
+        bundle_id="08349435-cfa3-4dce-8dda-de7acf08634b",
+        owner_user_id=SEED_USER_AUTHOR_ID,
+        owner_email="zihanqiu21@example.com",
+        owner_display_name="zihanqiu21",
+        tags=["模拟", "休闲"],
+        play_count=0,
+        like_count=0,
+        published_days_ago=0,
+    ),
+    SeedGameDefinition(
+        game_id=uuid.UUID("94566cf3-af26-421c-9e18-a2fc719e3411"),
+        bundle_id="94566cf3-af26-421c-9e18-a2fc719e3411",
+        owner_user_id=SEED_USER_AUTHOR_ID,
+        owner_email="zihanqiu21@example.com",
+        owner_display_name="zihanqiu21",
+        tags=["休闲", "冒险"],
+        play_count=2,
+        like_count=0,
+        published_days_ago=0,
+    ),
 )
 
 
-def _seed_author_defaults() -> dict[str, Any]:
+def _seed_author_defaults(definition: SeedGameDefinition) -> dict[str, Any]:
     return {
-        "user_id": SEED_AUTHOR_ID,
-        "email": "zihanqiu21@example.com",
-        "display_name": "zihanqiu21",
+        "user_id": definition.owner_user_id,
+        "email": definition.owner_email,
+        "display_name": definition.owner_display_name,
         "password_hash": None,
     }
 
@@ -122,15 +157,18 @@ def _content_type_for_path(relative_path: str) -> str:
 
 
 async def seed_published_games(session: AsyncSession, storage) -> list[Game]:
-    author = await session.get(User, SEED_AUTHOR_ID)
-    if author is None:
-        author = User(**_seed_author_defaults())
-        session.add(author)
-        await session.flush()
-
     now = datetime.now(timezone.utc)
 
     for definition in SEED_GAME_DEFINITIONS:
+        author = await session.get(User, definition.owner_user_id)
+        if author is None:
+            author = User(**_seed_author_defaults(definition))
+            session.add(author)
+            await session.flush()
+        else:
+            author.email = definition.owner_email
+            author.display_name = definition.owner_display_name
+
         manifest, bundle_files = _load_example_bundle(definition)
         version = "v1"
         manifest_key = storage.build_published_object_key(

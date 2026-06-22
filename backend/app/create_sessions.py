@@ -255,6 +255,47 @@ def _append_assistant_message(
     )
 
 
+def _assistant_message_payload(assistant_response: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "event_type": "assistant_response",
+        "suggestions": assistant_response.get("suggestions") or [],
+        "card": assistant_response.get("card"),
+        "actions": assistant_response.get("actions") or [],
+    }
+
+
+async def _replace_latest_card_assistant_message(
+    db: AsyncSession,
+    *,
+    session_id: uuid.UUID,
+    assistant_response: dict[str, Any],
+) -> bool:
+    content = str(assistant_response.get("message") or "")
+    if not content:
+        return False
+
+    messages = (
+        await db.execute(
+            select(CreateSessionMessage)
+            .where(
+                CreateSessionMessage.session_id == session_id,
+                CreateSessionMessage.role == "assistant",
+            )
+            .order_by(CreateSessionMessage.created_at.desc())
+        )
+    ).scalars()
+
+    for message in messages:
+        payload = message.payload if isinstance(message.payload, dict) else {}
+        if payload.get("card") is None:
+            continue
+        message.content = content
+        message.payload = _assistant_message_payload(assistant_response)
+        message.created_at = _now()
+        return True
+    return False
+
+
 def _append_event_input_message(
     db: AsyncSession,
     *,
@@ -508,11 +549,24 @@ async def handle_create_session_event(
     )
     handoff_to_generation = _apply_graph_result(create_session, graph_result)
     _append_event_input_message(db, session_id=create_session.id, event=event)
-    _append_assistant_message(
-        db,
-        session_id=create_session.id,
-        assistant_response=graph_result["assistant_response"],
-    )
+    if payload.type == "regenerate":
+        replaced_card_message = await _replace_latest_card_assistant_message(
+            db,
+            session_id=create_session.id,
+            assistant_response=graph_result["assistant_response"],
+        )
+        if not replaced_card_message:
+            _append_assistant_message(
+                db,
+                session_id=create_session.id,
+                assistant_response=graph_result["assistant_response"],
+            )
+    elif payload.type != "confirm":
+        _append_assistant_message(
+            db,
+            session_id=create_session.id,
+            assistant_response=graph_result["assistant_response"],
+        )
 
     create_session.updated_at = _now()
     await db.commit()

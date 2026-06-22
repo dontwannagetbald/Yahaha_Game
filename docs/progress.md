@@ -2,6 +2,74 @@
 
 本文档记录已实现功能、对应实施计划 step，以及尚未落地或需要补齐的边界。项目 layer、目录边界和文件职责维护在 [architecture.md](/Users/root1/workspace/Yahaha_Game/Yahaha_Game/docs/architecture.md)。
 
+### 2026-06-22：修复确认游戏卡片后重复弹出新卡片 ☑️ 已完成
+
+- 已定位“点击确认游戏卡片后又弹出一个卡片”的根因：`confirm` 事件走完 conversation graph 后，后端事件处理对非 `regenerate` 事件统一调用 `_append_assistant_message()`；由于 graph 的确认响应仍带 `assistant_response.card`，确认后消息流会额外追加一条新的 assistant card（Create Confirm Card）。
+- 已调整确认事件契约：`confirm` 只记录系统事件“确认当前游戏方案”、更新 session 为 `confirmed` 并返回 `handoff_to_generation`，不再追加新的 assistant card；原有卡片继续留在原消息位置，按钮由 confirmed 状态自动隐藏（Create Confirm Card）。
+- 已更新回归测试，锁定确认后最后一条消息事件为 `confirm`，且带 card 的消息仍只有一条，避免旧卡片之外再出现第二张卡片（Create Confirm Card）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_create_sessions.py::test_non_chat_events_append_reviewable_session_messages tests/test_create_sessions.py::test_confirm_marks_session_without_creating_generation_job tests/test_create_sessions.py::test_regenerate_replaces_existing_card_message_instead_of_appending -q` 通过，结果为 `3 passed`（Create Confirm Card）。
+
+### 2026-06-22：修复处理其他图片后 Create 预览封面不显示的问题 ☑️ 已完成
+
+- 已定位“处理别的图片后 cover 不显示”的真实断点：`assets/cover.png` 已生成并上传，但后端保存到 `games.cover_url` 的是容器本地路径 `app/output/.../assets/cover.png`，浏览器无法访问，前端 `<img>` 加载失败后回退到默认 `Yahaha World` 封面（Backend Asset Debug）。
+- 根因是 `LangGraphGenerationRunner` 将绝对 workspace `/app/output/...` 与相对 `assets/cover.png` 拼接时使用 `strip("/")`，吞掉了开头斜杠；随后 `_relative_path_inside_workspace()` 无法识别该 cover 位于 workspace 内，导致 draft 上传后没有转换成 `/api/jobs/{job_id}/artifacts/assets/cover.png` 代理 URL（Backend Asset Debug）。
+- 已修复 `_join_artifact_url()`，保留 workspace 前导斜杠；未来本地绝对路径 cover 会被 `_upload_local_bundle_to_draft_storage()` 正确转成浏览器可访问的 artifact 代理 URL（Backend Asset Debug）。
+- 已把当前小花仙 draft 的坏 `cover_url` 数据修复为 `/api/jobs/2dc5f190-811e-41d0-919f-53cafa226ea8/artifacts/assets/cover.png`，刷新 Create 后应能显示生成封面（Backend Asset Debug）。
+- 已新增/更新回归测试，让 Fake LangGraph 使用 `/app/output/...` 绝对 workspace，并断言 runner 输出不会丢失前导斜杠；同时保留 draft bundle 上传后 `game.cover_url` 必须为 artifact 代理 URL 的断言（Backend Asset Debug）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_agent_runner.py::test_langgraph_runner_emits_node_start_and_end_logs tests/test_agent_runner.py::test_success_uploads_local_bundle_to_draft_storage -q` 通过，结果为 `2 passed`；已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_agent_runner.py -q` 通过，结果为 `9 passed`（Backend Asset Debug）。
+
+### 2026-06-22：修复中文图片文件名上传 500 ☑️ 已完成
+
+- 已定位 `小镇图.jpg` 上传失败的根因：后端 `ObjectStorageService._sanitize_filename()` 只允许 ASCII 字符进入对象存储 key，中文 basename 被替换和裁剪后变成空字符串，触发 `StorageConfigurationError`，最终在 `/api/uploads/presign` 表现为泛化的 `Internal Server Error`（Backend Upload Filename）。
+- 已调整对象 key 清洗策略：原始文件 basename 有内容但无法 ASCII 化时，统一降级为安全文件名 `upload`，并保留合法扩展名，例如 `小镇图.jpg` 生成 `upload.jpg`；原始文件名仍由 `uploaded_assets.filename` 保存，不影响聊天流展示（Backend Upload Filename）。
+- 已新增回归测试 `test_upload_object_key_falls_back_for_non_ascii_filename`，锁定中文文件名不会再让 presign 阶段抛 500（Backend Upload Filename）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_storage.py -q` 通过，结果为 `7 passed`；已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_uploads.py -q` 通过，结果为 `5 passed`（Backend Upload Filename）。
+
+### 2026-06-22：修复上传背景在后续图片处理中丢失的 Orchestrator 规划问题 ☑️ 已完成
+
+- 已定位“处理别的图片后 background 不显示”的后端隐患：Orchestrator 允许 LLM 在只修改角色/其他图片时省略 `assets/background.png`，而归一化层只强制补 `cover.png`，没有把 fallback 判定出的上传背景合并回 runtime manifest（Backend Asset Debug）。
+- 已修正素材选择规则：明确带 `background / scene / 背景 / 森林 / landscape` 等背景语义的上传图片不会被 `_select_player_source_asset()` 抢先误归类为玩家素材，避免单张 `background.jpg` 先被当成 player 后又从 background 候选中排除（Backend Asset Debug）。
+- 已在 Orchestrator 归一化阶段保留 fallback 判定出的上传 runtime 背景/角色资产；当 LLM 响应省略已上传背景时，系统会把 `assets/background.png` 合并回 `asset_manifest_plan`，补回 `uploaded_asset_tasks`，并把对应决策对齐为 `uploaded_reference`（Backend Asset Debug）。
+- 已新增回归测试 `test_orchestrator_preserves_uploaded_background_when_llm_only_requests_player_revision`，覆盖上传 `background.jpg` 后只生成/修改 player 的场景，确保背景仍进入 manifest、Coding runtime asset paths 和 Asset Agent 上传任务（Backend Asset Debug）。
+- 已验证当前最新小花仙 job 的 MinIO draft 产物包含 `assets/background.png / assets/player.png / assets/cover.png`，`manifest.json.assets` 包含背景与玩家图，`game.js` 明确加载 `assets/background.png`（Backend Asset Debug）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_generation_orchestrator.py -k preserves_uploaded_background -q` 通过，结果为 `1 passed`；已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_generation_orchestrator.py tests/unit_tests/test_asset_agent.py tests/integration_tests/test_generation_graph.py -q` 通过，结果为 `30 passed`（Backend Asset Debug）。
+
+### 2026-06-22：补齐 backend 容器 Pillow 图片处理依赖 ☑️ 已完成
+
+- 已定位 `PNG fallback only supports 8-bit RGBA images; install Pillow for broader image support` 的根因：`lan_agents/pyproject.toml` 虽然声明了 `pillow>=10.0.0`，但 backend Dockerfile 只安装 `backend/requirements.txt`，随后仅 COPY `lan_agents/src`；因此容器运行 Asset Agent 时没有 `PIL`，上传 JPG 或模型返回非 fallback 支持的 PNG 会失败（Backend Pillow Runtime）。
+- 已在 `backend/requirements.txt` 增加 `pillow==10.4.0`，让 backend 镜像运行上传图片转换、JPG 读取、非简单 RGBA PNG 后处理时具备完整 Pillow 支持（Backend Pillow Runtime）。
+- 已新增配置回归测试，锁定 backend requirements 必须包含 Pillow，避免之后只更新 `lan_agents` 依赖却漏掉容器运行依赖（Backend Pillow Runtime）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_config.py -q` 通过，结果为 `9 passed`；已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_asset_agent.py -k uploaded -q` 通过，结果为 `2 passed`；已重新执行 `docker compose up -d --build backend` 并在容器内确认 `PIL 10.4.0` 可导入、JPG 可转换为 PNG（Backend Pillow Runtime）。
+
+### 2026-06-22：Asset Agent 并发生成独立图片 ☑️ 已完成
+
+- 已定位“传了图片素材后 Asset Agent 巨慢”的直接原因：`run_asset_agent()` 原本按顺序执行背景、角色、封面三类素材；上传图片时背景和角色会走 `images/edits` refine，封面仍会独立走 `images/generations`，所以三次远程图片请求会串行累加等待（Backend Asset Parallel）。
+- 已将背景、角色、封面封装为独立素材 job，并在同一个 Asset Agent 节点内用 `ThreadPoolExecutor` 并发执行；结果仍按背景、角色、封面的固定顺序合并，保持 `processed_assets / asset_analysis / manifest` 下游契约不变（Backend Asset Parallel）。
+- 已新增并发回归测试，验证三个独立图片请求至少存在重叠执行，避免之后退回串行；现有上传图 refine、独立封面、mock fallback 行为保持兼容（Backend Asset Parallel）。
+- 已验证 `cd lan_agents && .venv/bin/python -m pytest tests/unit_tests/test_asset_agent.py -q` 和 `cd lan_agents && .venv/bin/python -m pytest tests/integration_tests/test_generation_graph.py -q` 通过，结果分别为 `9 passed`、`5 passed`（Backend Asset Parallel）。
+
+### 2026-06-22：修复后端重启导致生成任务永久 RUNNING ☑️ 已完成
+
+- 已定位“Asset Agent 生成素材一直 RUNNING”的根因：任务 `fcb7c2f1-2001-40af-b0ac-9ef22fd998b9` 在 `asset_agent started` 后，backend 容器于 `2026-06-22 03:33:23` 发生重建/重启；当前任务使用 FastAPI in-process BackgroundTasks，进程重启会丢失内存中的执行任务，但数据库状态仍停留在 `running`，所以 UI 永远等不到完成或失败（Backend Job Recovery）。
+- 已新增 `recover_interrupted_jobs()`：后端启动时会把遗留的 `pending/running` generation jobs 标记为 `failed`，写入 `finished_at`、错误信息“生成任务因服务重启中断，请点击重新生成。”，并补一条 `agent_runner error` 日志，避免历史任务永久卡住（Backend Job Recovery）。
+- 已将恢复逻辑接入 FastAPI lifespan 启动流程；恢复失败只记录 warning，不阻断 API 启动，避免数据库短暂未就绪时拖垮服务（Backend Job Recovery）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_jobs.py -q` 和 `cd backend && ../.venv/bin/python -m pytest tests/test_agent_runner.py -q` 通过，结果分别为 `13 passed`、`9 passed`；已重新执行 `docker compose up -d --build backend` 并确认两个遗留 running 任务已自动转为 failed（Backend Job Recovery）。
+
+### 2026-06-22：修复重新生成方案卡片重复追加 ☑️ 已完成
+
+- 已定位截图中出现两张游戏卡片的根因：`regenerate` 事件后端会先写入一条系统事件消息，再调用 `_append_assistant_message()` 追加新的 assistant card；前端按消息历史逐条渲染带 `card` 的 assistant 消息，所以旧方案卡和新方案卡同时出现（Create Regenerate Card）。
+- 已调整后端 Create session 事件处理：`regenerate` 不再追加新的 assistant card，而是查找已有带卡片的 assistant 消息并原地覆盖其 `content/payload/card`；没有旧卡片时才 fallback 追加，保留兼容性（Create Regenerate Card）。
+- 已给前端渲染层增加兜底：历史消息中如果已经存在多条 card 消息，只保留第一张卡片位置，并用最新卡片内容覆盖它，避免旧会话脏数据继续显示双卡（Create Regenerate Card）。
+- 已新增/更新回归检查，覆盖 regenerate 后只有一条 card 消息、卡片 id 保持原位、前端折叠多卡片历史，以及 confirm/revision 相关路径不回归（Create Regenerate Card）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_create_sessions.py -q`、`cd frontend && npm run test:create-chat-event`、`npm run test:create-confirm-card` 和 `npm run test:create-redo-revision` 均通过（Create Regenerate Card）。
+
+### 2026-06-22：修复 Home 标签筛选选什么都为空 ☑️ 已完成
+
+- 已定位标签筛选为空的根因：前端筛选菜单展示中文标签并会把“冒险”映射为 `tag=adventure` 请求后端，但 seed 示例游戏写入数据库的标签是中文 `["解谜", "冒险"]`、`["冒险", "动作"]`；后端 `GET /api/games` 之前按原始字符串严格比较，导致 `adventure` 匹配不到 `冒险`（Backend Home Filter）。
+- 已在后端 games 路由增加标签归一化匹配：查询参数和游戏自身标签都会先映射到 canonical tag，再做比较；同时兼容 MVP 标签中文名、英文名和旧 alias 标签（Backend Home Filter）。
+- 已新增后端回归测试，覆盖 `tag=adventure` 和 `tag=冒险` 都能同时命中中文 seed 标签与英文历史标签，避免之后再次出现“选择任意标签都为空”（Backend Home Filter）。
+- 已验证 `cd backend && ../.venv/bin/python -m pytest tests/test_games.py tests/test_seed.py -q`、`cd frontend && npm run test:home-api`、`npm run test:home-filters` 和 `npm run test:play-page` 均通过（Backend Home Filter）。
+
 ### 2026-06-22：修复 Home 切回时游戏列表闪成加载占位 ☑️ 已完成
 
 - 已定位截图中“切 tab 页面删闪”的首页根因：`HomePage` 在每次 `isLoading=true` 时都会用“正在加载游戏列表...”占位整体替换 `games.map(...)` 卡片列表；路由或浏览器 tab 切回触发 `onLoadGames()` 后，旧游戏卡片会瞬间消失并重新排版（Frontend Home Flash）。
@@ -1086,15 +1154,15 @@
 
 ### Step 10：准备 Seed 游戏数据 ☑️ 已完成
 
-- 已将 `backend/app/seed.py` 改为直接读取根目录 `examples/` 下的 3 套真实 bundle，并用固定 game id 写入 `被误解的女巫：符文真相`、`精灵小兽`、`哈利的魔法追击` 这 3 个 published 示例游戏。
+- 已将 `backend/app/seed.py` 改为直接读取根目录 `examples/` 下的 5 套真实 bundle，并用固定 game id 写入 `被误解的女巫：符文真相`、`精灵小兽`、`哈利的魔法追击`、`小镇物语：职业日常`、`小花仙的花瓣收集换装之旅` 这 5 个 published 示例游戏。
 - 已让 seed 过程按 manifest 原样上传 `manifest.json`、`index.html`、`style.css`、`game.js` 和 `assets/cover.png`，并把 `cover_url`、`manifest_url`、`artifact_base_url` 回填为 public-read URL。
-- 已将 seed 作者固定为 `zihanqiu21`，同步保留首页所需的标签、点赞数、游玩数和发布时间，用于复现评审时看到的游戏卡片信息。
+- 已按示例游戏来源保留作者归属：官方示例游戏使用 `Yahaha Seeds`，`小镇物语：职业日常` 与 `小花仙的花瓣收集换装之旅` 使用 `zihanqiu21`，同步保留首页所需的标签、点赞数、游玩数和发布时间，用于复现评审时看到的游戏卡片信息。
 - 已新增 `scripts/seed_backend.py` 的容器兼容导入逻辑，可在本地仓库和 backend 镜像内复用同一份 seed 脚本。
-- 已更新 `backend/Dockerfile`，在容器启动时先执行迁移和 `python scripts/seed_backend.py`，保证 `docker compose up --build` 后首页默认可见这 3 个游戏。
+- 已更新 `backend/Dockerfile`，在容器启动时先执行迁移和 `python scripts/seed_backend.py`，保证 `docker compose up --build` 后首页默认可见这 5 个游戏。
 - 已保证 seed 幂等：重复执行会复用固定作者和固定游戏记录，不会重复创建同一批 published 示例游戏。
 - 已新增 `backend/tests/test_seed.py`，覆盖 published 游戏写入、幂等行为、manifest 契约和静态 bundle 结构。
 - 已新增 `backend/tests/test_config.py` 断言 backend 镜像会复制 `examples/`、复制 `scripts/` 并在启动前执行 seed。
-- 已验证 `cd backend && ../.venv/bin/pytest tests/test_seed.py -q` 与 `cd backend && ../.venv/bin/pytest tests/test_config.py -q` 通过。
+- 已验证 `cd backend && ../.venv/bin/pytest tests/test_seed.py -q` 与 `python3 -m py_compile backend/app/seed.py scripts/seed_backend.py` 通过。
 
 ### Agent Prototype Step 1：完成独立 Agent 原型 ☑️ 已完成
 

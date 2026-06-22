@@ -357,6 +357,37 @@ async def _append_agent_log(
     await db.commit()
 
 
+INTERRUPTED_JOB_ERROR = "生成任务因服务重启中断，请点击重新生成。"
+
+
+async def recover_interrupted_jobs(session_factory) -> int:
+    """Fail in-process background jobs that were orphaned by a server restart."""
+    async with session_factory() as session:
+        jobs = (
+            await session.execute(
+                select(GenerationJob).where(GenerationJob.status.in_(["pending", "running"]))
+            )
+        ).scalars().all()
+        if not jobs:
+            return 0
+        now = datetime.now(timezone.utc)
+        for job in jobs:
+            job.status = "failed"
+            job.finished_at = now
+            job.error_message = INTERRUPTED_JOB_ERROR
+            session.add(
+                AgentLog(
+                    job_id=job.id,
+                    step="agent_runner",
+                    level="error",
+                    message=INTERRUPTED_JOB_ERROR,
+                    created_at=now,
+                )
+            )
+        await session.commit()
+        return len(jobs)
+
+
 def _runner_accepts_emit_log(runner: Any) -> bool:
     try:
         return "emit_log" in signature(runner.run).parameters

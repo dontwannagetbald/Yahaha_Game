@@ -18,10 +18,38 @@ from app.storage import ObjectStorageService, StorageUnavailableError
 
 router = APIRouter(prefix="/api/games", tags=["games"])
 PUBLISHED_VERSION = "v1"
+TAG_ALIASES = {
+    "冒险": "adventure",
+    "动作": "action",
+    "策略": "strategy",
+    "解谜": "puzzle",
+    "街机": "arcade",
+    "生存": "survival",
+    "模拟": "simulation",
+    "竞速": "racing",
+    "节奏": "rhythm",
+    "角色扮演": "roleplay",
+    "休闲": "casual",
+    "教育": "educational",
+    "跑酷": "runner",
+    "射击": "shooter",
+    "合作": "co-op",
+    "平台跳跃": "platformer",
+    "恐怖": "horror",
+    "体育": "sports",
+    "治愈": "cozy",
+}
 
 
 def get_storage_service() -> ObjectStorageService:
     return ObjectStorageService(settings)
+
+
+def _normalize_tag_for_filter(tag: str) -> str:
+    normalized = tag.strip()
+    if not normalized:
+        return ""
+    return TAG_ALIASES.get(normalized, normalized.lower())
 
 
 def _serialize_game_card(
@@ -142,7 +170,7 @@ async def list_games(
     ).all()
 
     normalized_q = q.strip().lower()
-    normalized_tag = tag.strip().lower()
+    normalized_tag = _normalize_tag_for_filter(tag)
     filtered: list[tuple[Game, User]] = []
     for game, author in rows:
         if normalized_q:
@@ -155,9 +183,10 @@ async def list_games(
             ).lower()
             if normalized_q not in haystack:
                 continue
-        if normalized_tag and normalized_tag not in {
-            (item or "").lower() for item in (game.tags or [])
-        }:
+        game_tags = {
+            _normalize_tag_for_filter(item or "") for item in (game.tags or [])
+        }
+        if normalized_tag and normalized_tag not in game_tags:
             continue
         filtered.append((game, author))
 

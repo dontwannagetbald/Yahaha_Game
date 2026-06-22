@@ -54,19 +54,30 @@ def test_seed_games_creates_published_records_and_is_idempotent(session_factory)
             first = await seed_published_games(session, storage)
             second = await seed_published_games(session, storage)
 
-            assert len(first) == 3
+            assert len(first) == 5
             assert [game.id for game in first] == [game.id for game in second]
 
             users = (await session.execute(select(User))).scalars().all()
             games = (await session.execute(select(Game).order_by(Game.created_at.asc()))).scalars().all()
 
-            assert len(users) == 1
+            assert len(users) == 2
             assert len(games) == len(SEED_GAME_DEFINITIONS)
             assert [game.title for game in games] == [
                 "被误解的女巫：符文真相",
                 "哈利的魔法追击",
                 "精灵小兽",
+                "小镇物语：职业日常",
+                "小花仙的花瓣收集换装之旅",
             ]
+
+            owners_by_title = {game.title: game.owner.display_name for game in games}
+            assert owners_by_title == {
+                "被误解的女巫：符文真相": "Yahaha Seeds",
+                "哈利的魔法追击": "Yahaha Seeds",
+                "精灵小兽": "Yahaha Seeds",
+                "小镇物语：职业日常": "zihanqiu21",
+                "小花仙的花瓣收集换装之旅": "zihanqiu21",
+            }
 
             for game in games:
                 assert game.status == "published"
@@ -80,8 +91,7 @@ def test_seed_games_creates_published_records_and_is_idempotent(session_factory)
                 assert game.play_count >= 0
                 assert game.like_count >= 0
 
-            expected_files_per_game = 5
-            assert len(storage.uploaded_objects) == len(SEED_GAME_DEFINITIONS) * expected_files_per_game
+            assert len(storage.uploaded_objects) == 28
 
     asyncio.run(run())
 
@@ -133,6 +143,8 @@ def test_seed_games_use_example_bundles_from_repository(session_factory):
             witch = by_title["被误解的女巫：符文真相"]
             harry = by_title["哈利的魔法追击"]
             elf = by_title["精灵小兽"]
+            town = by_title["小镇物语：职业日常"]
+            flower = by_title["小花仙的花瓣收集换装之旅"]
 
             witch_manifest = json.loads(
                 storage.uploaded_objects[
@@ -149,6 +161,16 @@ def test_seed_games_use_example_bundles_from_repository(session_factory):
                     f"published/{elf.id}/v1/manifest.json"
                 ].decode("utf-8")
             )
+            town_manifest = json.loads(
+                storage.uploaded_objects[
+                    f"published/{town.id}/v1/manifest.json"
+                ].decode("utf-8")
+            )
+            flower_manifest = json.loads(
+                storage.uploaded_objects[
+                    f"published/{flower.id}/v1/manifest.json"
+                ].decode("utf-8")
+            )
 
             witch_html = storage.uploaded_objects[
                 f"published/{witch.id}/v1/index.html"
@@ -158,6 +180,12 @@ def test_seed_games_use_example_bundles_from_repository(session_factory):
             ].decode("utf-8")
             elf_html = storage.uploaded_objects[
                 f"published/{elf.id}/v1/index.html"
+            ].decode("utf-8")
+            town_html = storage.uploaded_objects[
+                f"published/{town.id}/v1/index.html"
+            ].decode("utf-8")
+            flower_html = storage.uploaded_objects[
+                f"published/{flower.id}/v1/index.html"
             ].decode("utf-8")
 
             witch_js = storage.uploaded_objects[
@@ -169,10 +197,18 @@ def test_seed_games_use_example_bundles_from_repository(session_factory):
             elf_js = storage.uploaded_objects[
                 f"published/{elf.id}/v1/game.js"
             ].decode("utf-8")
+            town_js = storage.uploaded_objects[
+                f"published/{town.id}/v1/game.js"
+            ].decode("utf-8")
+            flower_js = storage.uploaded_objects[
+                f"published/{flower.id}/v1/game.js"
+            ].decode("utf-8")
 
             assert witch_manifest["title"] == "被误解的女巫：符文真相"
             assert harry_manifest["title"] == "哈利的魔法追击"
             assert elf_manifest["title"] == "精灵小兽"
+            assert town_manifest["title"] == "小镇物语：职业日常"
+            assert flower_manifest["title"] == "小花仙的花瓣收集换装之旅"
 
             assert witch_manifest["controls"] == [
                 "鼠标点击/拖拽或键盘输入符文；与机关进行交互确认。"
@@ -181,16 +217,32 @@ def test_seed_games_use_example_bundles_from_repository(session_factory):
                 "方向键或WASD移动；Shift冲刺；无复杂技能栏。"
             ]
             assert elf_manifest["controls"] == ["点击地面移动；接触收集目标；无需复杂按键。"]
+            assert town_manifest["controls"] == [
+                "['点击选择地点、人物和行动', '拖拽整理装饰与物品']"
+            ]
+            assert flower_manifest["controls"] == [
+                "['点击花瓣收集', '拖动服装/装饰到小花仙身上']"
+            ]
 
             assert "女巫" in witch_html
             assert "哈利" in harry_html
             assert "精灵小兽" in elf_html
+            assert "小镇物语" in town_html
+            assert "小花仙" in flower_html
             assert "requestAnimationFrame" in witch_js
             assert "requestAnimationFrame" in harry_js
             assert "requestAnimationFrame" in elf_js
+            assert "requestAnimationFrame" in town_js
+            assert "requestAnimationFrame" in flower_js
 
             assert "符文" in witch_js
             assert "伏地魔" in harry_js
             assert "图鉴" in elf_js
+            assert "店员" in town_js
+            assert "医生" in town_js
+            assert "厨师" in town_js
+            assert "花瓣" in flower_js
+            assert "换装" in flower_js
+            assert "player.png" in flower_js
 
     asyncio.run(run())

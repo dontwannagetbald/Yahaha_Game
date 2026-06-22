@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,11 +14,30 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.auth import router as auth_router
 from app.config import settings
 from app.create_sessions import router as create_sessions_router
-from app.db import get_session
+from app.db import AsyncSessionLocal, get_session
 from app.games import router as games_router
-from app.jobs import router as jobs_router
+from app.jobs import recover_interrupted_jobs, router as jobs_router
 from app.play_events import router as play_events_router
 from app.uploads import router as uploads_router
+
+
+logger = logging.getLogger(__name__)
+
+
+async def _recover_jobs_interrupted_by_restart() -> None:
+    try:
+        recovered = await recover_interrupted_jobs(AsyncSessionLocal)
+    except Exception:
+        logger.warning("Failed to recover interrupted generation jobs", exc_info=True)
+        return
+    if recovered:
+        logger.warning("Recovered %s interrupted generation jobs", recovered)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await _recover_jobs_interrupted_by_restart()
+    yield
 
 
 app = FastAPI(
@@ -24,6 +47,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url="/openapi.json",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
