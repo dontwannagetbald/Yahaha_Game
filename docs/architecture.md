@@ -293,6 +293,7 @@
     ├── api-contract.md               接口契约：前后端 API、消息历史（Doc Sync 2026-06-21）
     ├── backend-implementation-plan.md 后端计划：API、revision 任务（Doc Sync 2026-06-21）
     ├── frontend-implementation-plan.md 前端计划：页面、任务会话状态（Doc Sync 2026-06-21）
+    ├── generation-graph-flow.md      Agent 文档：生成流程（Doc Sync 2026-06-24）、验收与 Reflection（Doc Sync 2026-06-24）
     ├── agent-implementation-plan.md   Agent 计划：执行器、revision graph（Doc Sync 2026-06-21）
     ├── agent-orchestration-design.md  Agent 设计：多 Agent 工作流（Agent Prototype Step 1）、revision graph（Doc Sync 2026-06-21）
     ├── data-model.md                 数据模型：核心实体（Doc Sync 2026-06-21）、关系约束（Doc Sync 2026-06-21）

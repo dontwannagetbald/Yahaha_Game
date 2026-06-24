@@ -68,6 +68,21 @@ const googleErrorTitle = "Google 登录失败";
 const createLoginPromptTitle = "创建游戏需要先登录";
 const THINKING_MESSAGE_DELAY_MS = 1000;
 const JOB_POLL_INTERVAL_MS = 1500;
+
+function stripUrlQuery(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+  return value.split("?")[0] || value;
+}
+
+function buildIframeEntryUrl(artifactBaseUrl: string | null): string | null {
+  const safeBaseUrl = stripUrlQuery(artifactBaseUrl);
+  if (!safeBaseUrl) {
+    return null;
+  }
+  return `${safeBaseUrl.replace(/\/?$/, "/")}index.html`;
+}
 const CREATE_REVISION_ACK_MESSAGE = "好的，这就为您修改";
 const CREATE_SUCCESS_REVISION_PROMPT = "有想要修改的地方欢迎随时告诉我～";
 const AUTH_USER_CACHE_KEY = "yahaha.currentUser";
@@ -667,6 +682,13 @@ export function App() {
         tag: tag || "all",
         query: q || "all",
         count: response.games.length,
+        remoteArtifacts: response.games.map((game) => ({
+          gameId: game.id,
+          title: game.title,
+          manifestUrl: stripUrlQuery(game.manifestUrl),
+          artifactBaseUrl: stripUrlQuery(game.artifactBaseUrl),
+          iframeEntryUrl: buildIframeEntryUrl(game.artifactBaseUrl),
+        })),
       });
     } catch (error) {
       const userError = createUserError("游戏列表加载失败", error, "请刷新页面或稍后重试。");
